@@ -242,10 +242,12 @@ hook.Add("CalcView", "nte_calcview", function(ply, pos, angles, fov, znear, zfar
 		lerped_pos = pos
 	end
 
+	local af = cv_ft * (0.3 / cv_ft) * 30
+
 	local speed = ply:GetMaxSpeed()
 	if ply:GetVelocity():Length() <= 50 then speed = 0 end
 	wish_viewbob_factor = math.Remap(speed, 0, ply:GetRunSpeed(), 0, 1)
-	lerped_viewbob_factor = math.Round(approach(lerped_viewbob_factor, wish_viewbob_factor, 10), 2)
+	lerped_viewbob_factor = math.Round(approach(lerped_viewbob_factor, wish_viewbob_factor, af), 2)
 
 	local drunk_view = generate_random_ang(0.9, 0.8, 0.5, 3, 3.6, 3.3, CurTime()) * mult
 	local drunk_pos = generate_random_vec(1.2, 0.7, 0.8, 3.2, 3, 2, CurTime()) * mult
@@ -266,7 +268,7 @@ hook.Add("CalcView", "nte_calcview", function(ply, pos, angles, fov, znear, zfar
 		side_offset = -angles:Up() * distance:GetFloat()
 		wish_angle_offset = Angle(-2, 0, 0)
 	end
-	lerped_angle_offset = approach_ang(lerped_angle_offset, wish_angle_offset, 10)
+	lerped_angle_offset = approach_ang(lerped_angle_offset, wish_angle_offset, af)
 
 	local zoom_offset = Vector()
 	local zoom_fov_offset = 0
@@ -283,8 +285,8 @@ hook.Add("CalcView", "nte_calcview", function(ply, pos, angles, fov, znear, zfar
 	// i'm not gonna spend my time trying to figure out what variable, function or whatever is needed or not for each mode
 	// receive this instead.
 	// todo: figure out a way to smoothly get rid of the head or smth
+	ply:ManipulateBoneScale(ply:LookupBone("ValveBiped.Bip01_Head1"), Vector(1,1,1))
 	if mode:GetInt() == 0 then
-		ply:ManipulateBoneScale(ply:LookupBone("ValveBiped.Bip01_Head1"), Vector(1,1,1))
 		tr = run_hull_trace(pos,
 							pos - angles:Forward() * distance:GetFloat() * 3
 							+
@@ -292,7 +294,6 @@ hook.Add("CalcView", "nte_calcview", function(ply, pos, angles, fov, znear, zfar
 							+
 							walk_viewbob_pos + drunk_pos + crouch_offset - side_offset - zoom_offset)
 	elseif mode:GetInt() == 1 then
-		ply:ManipulateBoneScale(ply:LookupBone("ValveBiped.Bip01_Head1"), Vector(1,1,1))
 		local headpos, headang = ply:GetBonePosition(ply:LookupBone("ValveBiped.Bip01_Head1"))
 		local c_headpos, _ = LocalToWorld(Vector(5,-5,0), Angle(0,-90,-90), headpos, headang)
 		tr = run_hull_trace(pos,
@@ -303,7 +304,7 @@ hook.Add("CalcView", "nte_calcview", function(ply, pos, angles, fov, znear, zfar
 	end
 
 	wish_fraction = math.Clamp(tr.Fraction, 0.2, 0.6)
-	lerped_fraction = approach(lerped_fraction, wish_fraction, 10)
+	lerped_fraction = approach(lerped_fraction, wish_fraction, af)
 
 	// doesnt work well with custom models. why?
 	LocalPlayer():SetRenderMode(RENDERMODE_TRANSCOLOR)
@@ -312,8 +313,8 @@ hook.Add("CalcView", "nte_calcview", function(ply, pos, angles, fov, znear, zfar
 	wish_fov = math.Remap(tr.Fraction, 0, 1, wish_fov_max:GetFloat(), wish_fov_min:GetFloat()) - zoom_fov_offset
 	wish_pos = tr.HitPos
 
-	lerped_fov = approach(lerped_fov, wish_fov, 10)
-	lerped_pos = approach_vec(lerped_pos, wish_pos, 10)
+	lerped_fov = approach(lerped_fov, wish_fov, af)
+	lerped_pos = approach_vec(lerped_pos, wish_pos, af)
 
 	znear = 1
 
