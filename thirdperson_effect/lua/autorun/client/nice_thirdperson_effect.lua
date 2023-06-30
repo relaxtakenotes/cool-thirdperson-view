@@ -32,10 +32,6 @@ local wish_viewbob_factor = 0
 local lerped_viewbob_factor = 0
 local mult = 1
 
-local samples_ft = {}
-local last_systime = SysTime()
-local curr_systime = SysTime()
-
 local side = 1
 local side_switch_delay = 1
 local side_waiting = false
@@ -160,22 +156,8 @@ local function calculate_side(angles, plytrace)
 end
 
 local function calculate_ft()
-	last_systime = curr_systime
-	curr_systime = SysTime()
-
-	table.insert(samples_ft, curr_systime - last_systime)
-
-	if table.Count(samples_ft) > 10 then
-		table.remove(samples_ft, 1)
-	end
-
-	local summ = 0
-
-	for i, num in ipairs(samples_ft) do
-		summ = summ + num
-	end
-
-	cv_ft = math.Round(summ / table.Count(samples_ft), 4)
+	// i had a whole algorithm to average frametime out but now... i DONT FUCKING NEED IT? OK BRO
+	cv_ft = engine.AbsoluteFrameTime()
 
 	// math fuckery where instead of being able to multiply cv_time by some factor i have to do this shit to speed up viewbobbing.
 	// maybe i'm just bad.
