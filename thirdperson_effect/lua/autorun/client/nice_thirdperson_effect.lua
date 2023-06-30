@@ -4,9 +4,10 @@ local wish_fov_min = CreateConVar("cl_nte_wish_fov_min", "75", FCVAR_ARCHIVE)
 local distance = CreateConVar("cl_nte_distance", "20", FCVAR_ARCHIVE)
 local eyetrace_distance = CreateConVar("cl_nte_eyetrace_distance", "500", FCVAR_ARCHIVE)
 local mode = CreateConVar("cl_nte_mode", "0", FCVAR_ARCHIVE, "0 - thirdperson, 1 - immersive firstperson")
-
 local visibility_tolerance = CreateConVar("cl_nte_vis_tolerance", "0.8", FCVAR_ARCHIVE)
 local reaction_time_div = CreateConVar("cl_nte_reaction_time_div", "8", FCVAR_ARCHIVE)
+local viewbob_mult_walk = CreateConVar("cl_nte_viewbob_mult_walk", 1, FCVAR_ARCHIVE)
+local viewbob_mult_drunk = CreateConVar("cl_nte_viewbob_mult_drunk", 1, FCVAR_ARCHIVE)
 
 local box_size_2 = CreateConVar("cl_nte_vischeck_size", "5", FCVAR_ARCHIVE)
 
@@ -25,12 +26,13 @@ local lerped_fraction = 1
 local wish_angle_offset = Angle()
 local lerped_angle_offset = Angle()
 
+local move_back = false
+
 local cv_ft = 0
 local cv_time = 0
 
 local wish_viewbob_factor = 0
 local lerped_viewbob_factor = 0
-local mult = 1
 
 local side = 1
 local side_switch_delay = 1
@@ -190,11 +192,12 @@ hook.Add("RenderScreenspaceEffects", "nte_crosshair", function()
 	local tr = LocalPlayer():GetEyeTrace()
 
 	local visibilitytr = util.TraceLine({
-		start = wish_pos,
+		start = lerped_pos,
 		endpos = tr.HitPos,
-		filter = LocalPlayer(),
-		mask = MASK_SHOT_PORTAL
+		filter = LocalPlayer()
 	})
+
+	debugoverlay.Line(visibilitytr.StartPos, visibilitytr.HitPos, engine.AbsoluteFrameTime(), Color(0, 255, 255), false)
 
 	if visibilitytr.Fraction > 0.99 then
 		surface.SetDrawColor(255, 255, 255, 255)
@@ -207,8 +210,11 @@ hook.Add("RenderScreenspaceEffects", "nte_crosshair", function()
 	surface.DrawTexturedRect(tos.x - 16, tos.y - 16, 32, 32)
 end)
 
-hook.Add("CalcView", "nte_calcview", function(ply, pos, angles, fov, znear, zfar)
-	// todo: maybe port this to that calcview priority system... or figure out how to support other calcview hooks manually..
+hook.Add("CreateMove", "nte_get_away_from_the_wall", function(cmd)
+	if move_back then cmd:SetForwardMove(-100000) end
+end)
+
+local function main(ply, pos, angles, fov, znear, zfar)
 	calculate_ft()
 
 	if cv_ft <= 0 then print("wtf?") return end
@@ -224,17 +230,20 @@ hook.Add("CalcView", "nte_calcview", function(ply, pos, angles, fov, znear, zfar
 		lerped_pos = pos
 	end
 
+	// todo: make approach speed constant on every framerate somehow...
 	local af = cv_ft * (0.3 / cv_ft) * 30
 
+	local mult_walk = viewbob_mult_walk:GetFloat()
+	local mult_drunk = viewbob_mult_drunk:GetFloat()
 	local speed = ply:GetMaxSpeed()
 	if ply:GetVelocity():Length() <= 50 then speed = 0 end
 	wish_viewbob_factor = math.Remap(speed, 0, ply:GetRunSpeed(), 0, 1)
 	lerped_viewbob_factor = math.Round(approach(lerped_viewbob_factor, wish_viewbob_factor, af), 2)
 
-	local drunk_view = generate_random_ang(0.9, 0.8, 0.5, 3, 3.6, 3.3, CurTime()) * mult
-	local drunk_pos = generate_random_vec(1.2, 0.7, 0.8, 3.2, 3, 2, CurTime()) * mult
-	local walk_viewbob = generate_random_ang(0.22, 0.15, 0.1, 2, 3.6, 3.3, cv_time) * mult * lerped_viewbob_factor
-	local walk_viewbob_pos = generate_random_vec(0.5, 0.4, 0.3, 2, 3.6, 3.3, cv_time) * mult * lerped_viewbob_factor * 10
+	local drunk_view = generate_random_ang(0.9, 0.8, 0.5, 3, 3.6, 3.3, CurTime()) * mult_drunk
+	local drunk_pos = generate_random_vec(1.2, 0.7, 0.8, 3.2, 3, 2, CurTime()) * mult_drunk
+	local walk_viewbob = generate_random_ang(0.22, 0.15, 0.1, 2, 3.6, 3.3, cv_time) * mult_walk * lerped_viewbob_factor
+	local walk_viewbob_pos = generate_random_vec(0.5, 0.4, 0.3, 2, 3.6, 3.3, cv_time) * mult_walk * lerped_viewbob_factor * 10
 
 	local plytrace = util.TraceLine({
 		start = ply:GetShootPos(),
@@ -275,6 +284,7 @@ hook.Add("CalcView", "nte_calcview", function(ply, pos, angles, fov, znear, zfar
 							LocalPlayer():GetVelocity() * cv_ft * (0.015 / cv_ft) * 5
 							+
 							walk_viewbob_pos + drunk_pos + crouch_offset - side_offset - zoom_offset)
+		move_back = false
 	elseif mode:GetInt() == 1 then
 		local headpos, headang = ply:GetBonePosition(ply:LookupBone("ValveBiped.Bip01_Head1"))
 		local c_headpos, _ = LocalToWorld(Vector(5,-5,0), Angle(0,-90,-90), headpos, headang)
@@ -282,6 +292,7 @@ hook.Add("CalcView", "nte_calcview", function(ply, pos, angles, fov, znear, zfar
 							c_headpos + LocalPlayer():GetVelocity() * cv_ft * (0.015 / cv_ft) * 7
 							+
 							walk_viewbob_pos + drunk_pos)
+		move_back = tr.Fraction < 0.92
 		ply:ManipulateBoneScale(ply:LookupBone("ValveBiped.Bip01_Head1"), Vector())
 	end
 
@@ -310,4 +321,17 @@ hook.Add("CalcView", "nte_calcview", function(ply, pos, angles, fov, znear, zfar
 	}
 
 	return view
+end
+
+// this would the the preferred way to do it, but sadly due to mod loading order sometimes it can |not execute|	
+//hook.Add("CalcViewPS_Initialized", "nte_load", function()
+//		CalcViewPS.AddToTop("nte_main", main)
+//end)
+
+// note: cause of the priority system hot reloading this script will cause errors.
+//		 either switch to using raw calcview or rejoin the server everytime you change something
+hook.Add("InitPostEntity", "nte_load", function()
+	timer.Simple(1, function()
+		if CalcViewPS then CalcViewPS.AddToTop("nte_main", main) end
+	end)
 end)
