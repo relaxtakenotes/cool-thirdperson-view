@@ -8,6 +8,7 @@ local visibility_tolerance = CreateConVar("cl_nte_vis_tolerance", "0.8", FCVAR_A
 local reaction_time_div = CreateConVar("cl_nte_reaction_time_div", "8", FCVAR_ARCHIVE)
 local viewbob_mult_walk = CreateConVar("cl_nte_viewbob_mult_walk", 1, FCVAR_ARCHIVE)
 local viewbob_mult_drunk = CreateConVar("cl_nte_viewbob_mult_drunk", 1, FCVAR_ARCHIVE)
+local crosshair_enabled = CreateConVar("cl_nte_crosshair", 1, FCVAR_ARCHIVE)
 
 local box_size_2 = CreateConVar("cl_nte_vischeck_size", "5", FCVAR_ARCHIVE)
 
@@ -43,7 +44,7 @@ local right = 1
 local up = 1
 
 local function approach(n1, n2, factor)
-	return math.Approach(n1, n2, math.abs(n1 - n2) * cv_ft * factor + cv_ft)
+	return math.Approach(n1, n2, math.abs(n1 - n2) * factor * cv_ft + cv_ft)
 end
 
 local function approach_vec(v1, v2, factor)
@@ -188,7 +189,8 @@ end
 local crosshair = Material("nte/crosshair.png")
 
 hook.Add("RenderScreenspaceEffects", "nte_crosshair", function()
-	if not enabled:GetBool() then return end
+	if not enabled:GetBool() or not crosshair_enabled:GetBool() then return end
+
 	local tr = LocalPlayer():GetEyeTrace()
 
 	local visibilitytr = util.TraceLine({
@@ -230,8 +232,7 @@ local function main(ply, pos, angles, fov, znear, zfar)
 		lerped_pos = pos
 	end
 
-	// todo: make approach speed constant on every framerate somehow...
-	local af = cv_ft * (0.3 / cv_ft) * 30
+	local af = 10
 
 	local mult_walk = viewbob_mult_walk:GetFloat()
 	local mult_drunk = viewbob_mult_drunk:GetFloat()
@@ -276,12 +277,14 @@ local function main(ply, pos, angles, fov, znear, zfar)
 	// i'm not gonna spend my time trying to figure out what variable, function or whatever is needed or not for each mode
 	// receive this instead.
 	// todo: figure out a way to smoothly get rid of the head or smth
+
+	local weird_magic_number = (((1 / cv_ft) - af) / af) // used to compensate for player velocity, so that the camera is still smooth but is stuck to the player 
 	ply:ManipulateBoneScale(ply:LookupBone("ValveBiped.Bip01_Head1"), Vector(1,1,1))
 	if mode:GetInt() == 0 then
 		tr = run_hull_trace(pos,
 							pos - angles:Forward() * distance:GetFloat() * 3
 							+
-							LocalPlayer():GetVelocity() * cv_ft * (0.015 / cv_ft) * 5
+							LocalPlayer():GetVelocity() * cv_ft * weird_magic_number * 0.6
 							+
 							walk_viewbob_pos + drunk_pos + crouch_offset - side_offset - zoom_offset)
 		move_back = false
@@ -289,7 +292,9 @@ local function main(ply, pos, angles, fov, znear, zfar)
 		local headpos, headang = ply:GetBonePosition(ply:LookupBone("ValveBiped.Bip01_Head1"))
 		local c_headpos, _ = LocalToWorld(Vector(5,-5,0), Angle(0,-90,-90), headpos, headang)
 		tr = run_hull_trace(pos,
-							c_headpos + LocalPlayer():GetVelocity() * cv_ft * (0.015 / cv_ft) * 7
+							c_headpos
+							+
+							LocalPlayer():GetVelocity() * cv_ft * weird_magic_number
 							+
 							walk_viewbob_pos + drunk_pos)
 		move_back = tr.Fraction < 0.92
@@ -335,3 +340,5 @@ hook.Add("InitPostEntity", "nte_load", function()
 		if CalcViewPS then CalcViewPS.AddToTop("nte_main", main) end
 	end)
 end)
+
+//hook.Add("CalcView", "nte_dev_main", main)
