@@ -353,6 +353,26 @@ cvars.AddChangeCallback(enabled:GetName(), function()
 	if not enabled:GetBool() then CalcViewPS.Remove("nte_main") end
 end)
 
+concommand.Add("cl_nte_reset", function()
+	enabled:Revert()
+	wish_fov_max:Revert()
+	wish_fov_min:Revert()
+	distance:Revert()
+	eyetrace_distance:Revert()
+	mode:Revert()
+	visibility_tolerance:Revert()
+	reaction_time_div:Revert()
+	viewbob_mult_walk:Revert()
+	viewbob_mult_drunk:Revert()
+	crosshair_enabled:Revert()
+	render_head:Revert()
+	head_offset:Revert()
+	predict_head:Revert()
+	autoside_enabled:Revert()
+	default_side:Revert()
+	box_size_2:Revert()
+end)
+
 //hook.Add("CalcView", "nte_dev_main", main)
 
 local function preferences(Panel)
@@ -391,6 +411,8 @@ local function preferences(Panel)
 	Panel:ControlHelp("Too much to explain. Leave it at default or play around with it until you're satisfied.")
 	Panel:NumSlider("AutoSide Reaction time DIV", reaction_time_div:GetName(), 0, 100, 1)
 	Panel:ControlHelp("Part of a magic formula that determines how fast autoside should react. Higher - faster, lower - slower.")
+	Panel:ControlHelp("\n\n")
+	Panel:Button("Reset settings", "cl_nte_reset")
 
 end
 
