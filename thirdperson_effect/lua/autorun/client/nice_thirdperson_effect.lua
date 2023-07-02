@@ -10,6 +10,13 @@ local viewbob_mult_walk = CreateConVar("cl_nte_viewbob_mult_walk", 1, FCVAR_ARCH
 local viewbob_mult_drunk = CreateConVar("cl_nte_viewbob_mult_drunk", 1, FCVAR_ARCHIVE)
 local crosshair_enabled = CreateConVar("cl_nte_crosshair", 1, FCVAR_ARCHIVE)
 
+local render_head = CreateConVar("cl_nte_render_head", 0, FCVAR_ARCHIVE)
+local head_offset = CreateConVar("cl_nte_head_offset", "8 -8 0", FCVAR_ARCHIVE)
+local predict_head = CreateConVar("cl_nte_predict_head", 0, FCVAR_ARCHIVE)
+
+local autoside_enabled = CreateConVar("cl_nte_autoside_enabled", 1, FCVAR_ARCHIVE)
+local default_side = CreateConVar("cl_nte_default_side", -1, FCVAR_ARCHIVE)
+
 local box_size_2 = CreateConVar("cl_nte_vischeck_size", "5", FCVAR_ARCHIVE)
 
 local _mins = Vector(-box_size_2:GetFloat(), -box_size_2:GetFloat(), -box_size_2:GetFloat())
@@ -91,6 +98,7 @@ local function run_hull_trace(start, endpos)
 end
 
 local function calculate_side(angles, plytrace)
+	if not autoside_enabled:GetBool() then side = default_side:GetInt() return end
 	// hacky
 	// i'm offsetting the hull start and end positions by their size in the respective directions so that
 	// we can more easily react to visibility changes on corners.
@@ -213,8 +221,11 @@ hook.Add("RenderScreenspaceEffects", "nte_crosshair", function()
 end)
 
 hook.Add("CreateMove", "nte_get_away_from_the_wall", function(cmd)
-	if move_back then cmd:SetForwardMove(-100000) end
+	if move_back and LocalPlayer():GetMoveType() == MOVETYPE_WALK then cmd:SetForwardMove(-100000) end
 end)
+
+local last_head_pos = Vector()
+local curr_head_pos = Vector()
 
 local function main(ply, pos, angles, fov, znear, zfar)
 	calculate_ft()
@@ -252,6 +263,7 @@ local function main(ply, pos, angles, fov, znear, zfar)
 		filter = ply,
 		mask = MASK_SHOT_PORTAL
 	})
+
 	if not ply:KeyDown(IN_ATTACK) then calculate_side(angles, plytrace) else side_switch_delay = 1 end
 
 	local side_offset = angles:Right() * distance:GetFloat() * side
@@ -272,33 +284,33 @@ local function main(ply, pos, angles, fov, znear, zfar)
 	local crouch_offset = Vector()
 	if ply:Crouching() then crouch_offset.z = crouch_offset.z + 18 end
 
-	local tr = {}
 
 	// i'm not gonna spend my time trying to figure out what variable, function or whatever is needed or not for each mode
 	// receive this instead.
 	// todo: figure out a way to smoothly get rid of the head or smth
 
-	local weird_magic_number = (((1 / cv_ft) - af) / af) // used to compensate for player velocity, so that the camera is still smooth but is stuck to the player 
-	ply:ManipulateBoneScale(ply:LookupBone("ValveBiped.Bip01_Head1"), Vector(1,1,1))
+	ply:ManipulateBoneScale(ply:LookupBone("ValveBiped.Bip01_Head1"), Vector(1, 1, 1))
+	local headpos, headang = ply:GetBonePosition(ply:LookupBone("ValveBiped.Bip01_Head1"))
+	local offset = string.Split(head_offset:GetString(), " ")
+	local c_headpos, _ = LocalToWorld(Vector(offset[1], offset[2], offset[3]), Angle(0, -90, -90), headpos, headang)
+	last_head_pos = curr_head_pos
+	curr_head_pos = c_headpos
+
+	local weird_magic_number = ((1 / cv_ft) - af) / af // used to compensate for player/head velocity, so that the camera is still smooth but is stuck to the player
+
+	local player_velocity = LocalPlayer():GetVelocity()
+	local head_velocity = curr_head_pos - last_head_pos - player_velocity * cv_ft
+
+	local tr = {}
 	if mode:GetInt() == 0 then
-		tr = run_hull_trace(pos,
-							pos - angles:Forward() * distance:GetFloat() * 3
-							+
-							LocalPlayer():GetVelocity() * cv_ft * weird_magic_number * 0.6
-							+
-							walk_viewbob_pos + drunk_pos + crouch_offset - side_offset - zoom_offset)
+		tr = run_hull_trace(pos, pos - angles:Forward() * distance:GetFloat() * 3 + player_velocity * cv_ft * weird_magic_number * 0.6 + walk_viewbob_pos + drunk_pos + crouch_offset - side_offset - zoom_offset)
 		move_back = false
 	elseif mode:GetInt() == 1 then
-		local headpos, headang = ply:GetBonePosition(ply:LookupBone("ValveBiped.Bip01_Head1"))
-		local c_headpos, _ = LocalToWorld(Vector(5,-5,0), Angle(0,-90,-90), headpos, headang)
-		tr = run_hull_trace(pos,
-							c_headpos
-							+
-							LocalPlayer():GetVelocity() * cv_ft * weird_magic_number
-							+
-							walk_viewbob_pos + drunk_pos)
+		local head_prediction = Vector()
+		if predict_head:GetBool() then head_prediction = head_velocity * cv_ft * weird_magic_number * 100 end
+		tr = run_hull_trace(pos, c_headpos + player_velocity * cv_ft * weird_magic_number + walk_viewbob_pos + drunk_pos + head_prediction)
 		move_back = tr.Fraction < 0.92
-		ply:ManipulateBoneScale(ply:LookupBone("ValveBiped.Bip01_Head1"), Vector())
+		if not render_head:GetBool() then ply:ManipulateBoneScale(ply:LookupBone("ValveBiped.Bip01_Head1"), Vector()) end
 	end
 
 	wish_fraction = math.Clamp(tr.Fraction, 0.2, 0.6)
@@ -342,3 +354,46 @@ hook.Add("InitPostEntity", "nte_load", function()
 end)
 
 //hook.Add("CalcView", "nte_dev_main", main)
+
+local function preferences(Panel)
+	Panel:CheckBox("Enabled", enabled:GetName())
+	Panel:NumSlider("Mode", mode:GetName(), 0, 1, 0)
+	Panel:ControlHelp("1 - immersive firstperson, 0 - thirdperson")
+	Panel:CheckBox("Crosshair Enabled", crosshair_enabled:GetName())
+
+	Panel:ControlHelp("")
+
+	Panel:CheckBox("Render Head", render_head:GetName())
+	Panel:ControlHelp("Renders your head when you're in firstperson mode. (mode: 1)")
+	Panel:CheckBox("Predict Head Movement", predict_head:GetName())
+	Panel:ControlHelp("This accounts for your head movement when you're in firstperson, recommended for use with render head on, otherwise keep this off. (mode: 1)")
+
+	Panel:ControlHelp("")
+
+	Panel:NumSlider("Max wish fov", wish_fov_max:GetName(), 75, 120)
+	Panel:NumSlider("Min wish fov", wish_fov_min:GetName(), 75, 120)
+	Panel:NumSlider("Camera distance", distance:GetName(), 0, 200)
+
+	Panel:ControlHelp("")
+
+	Panel:NumSlider("Walk Viewbob multiplier", viewbob_mult_walk:GetName(), 0, 10, 1)
+	Panel:NumSlider("Idle Viewbob multiplier", viewbob_mult_drunk:GetName(), 0, 10, 1)
+
+	Panel:ControlHelp("")
+
+	Panel:CheckBox("Autoside Enabled", autoside_enabled:GetName())
+	Panel:ControlHelp("System that automatically determines on which side the camera should be.")
+	Panel:NumSlider("Default side", default_side:GetName(), -1, 1, 0)
+	Panel:ControlHelp("If autoside is disabled, this will decide the side. (-1 - right, 0 - up, 1 - left)")
+	Panel:NumSlider("AutoSide distance", eyetrace_distance:GetName(), 0, 9999)
+	Panel:ControlHelp("At what distance should the auto side system kick in.")
+	Panel:NumSlider("AutoSide Trace Fraction tolerance", visibility_tolerance:GetName(), 0, 1, 2)
+	Panel:ControlHelp("Too much to explain. Leave it at default or play around with it until you're satisfied.")
+	Panel:NumSlider("AutoSide Reaction time DIV", reaction_time_div:GetName(), 0, 100, 1)
+	Panel:ControlHelp("Part of a magic formula that determines how fast autoside should react. Higher - faster, lower - slower.")
+
+end
+
+hook.Add("PopulateToolMenu", "dwr_clientsettings", function()
+	spawnmenu.AddToolMenuOption("Options", "CTV", "CTV_preferences", "Options", "", "", preferences, {})
+end)
