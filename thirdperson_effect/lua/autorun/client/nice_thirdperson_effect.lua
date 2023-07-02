@@ -115,10 +115,6 @@ local function calculate_side(angles, plytrace)
 	local up_offset = (up_startpos - plytrace.HitPos):Angle():Up() * box_size_2:GetFloat()
 	local tr_to_hitpos_above = run_hull_trace(up_startpos + up_offset, plytrace.HitPos + up_offset)
 
-	debugoverlay.SweptBox(tr_to_hitpos_above.StartPos, tr_to_hitpos_above.HitPos, _mins, _maxs, Angle(), cv_ft, Color(255, 255, 255, 128))
-	debugoverlay.SweptBox(tr_to_hitpos_right.StartPos, tr_to_hitpos_right.HitPos, _mins, _maxs, Angle(), cv_ft, Color(255, 255, 255, 128))
-	debugoverlay.SweptBox(tr_to_hitpos_left.StartPos, tr_to_hitpos_left.HitPos, _mins, _maxs, Angle(), cv_ft, Color(255, 255, 255, 128))
-
 	left = tr_to_hitpos_left.Fraction
 	right = tr_to_hitpos_right.Fraction
 	up = tr_to_hitpos_above.Fraction
@@ -127,11 +123,6 @@ local function calculate_side(angles, plytrace)
 	if side_switch_delay > 0 then return end
 
 	local reaction_time = math.max(math.sqrt(LocalPlayer():GetVelocity():Length()) / reaction_time_div:GetFloat(), 0.3)
-
-	//print("----------------")
-	//print(_is_up(), _is_right(), _is_left(), side_waiting)
-	//print(above, right, left, "___")
-	//print("----------------")
 
 	if _is_up() and not side_waiting then
 		side_waiting = true
@@ -207,8 +198,6 @@ hook.Add("RenderScreenspaceEffects", "nte_crosshair", function()
 		filter = LocalPlayer()
 	})
 
-	debugoverlay.Line(visibilitytr.StartPos, visibilitytr.HitPos, engine.AbsoluteFrameTime(), Color(0, 255, 255), false)
-
 	if visibilitytr.Fraction > 0.99 then
 		surface.SetDrawColor(255, 255, 255, 255)
 	else
@@ -230,7 +219,7 @@ local curr_head_pos = Vector()
 local function main(ply, pos, angles, fov, znear, zfar)
 	calculate_ft()
 
-	if cv_ft <= 0 then print("wtf?") return end
+	if cv_ft <= 0 then print("[CTV] frametime is lower or equal to zero... wtf?") return end
 
 	if GetViewEntity():GetPos():Distance(LocalPlayer():GetPos()) > 5 or LocalPlayer():Health() <= 0 or not enabled:GetBool() then
 		wish_pos = Vector()
@@ -349,7 +338,7 @@ end
 //		 either switch to using raw calcview or rejoin the server everytime you change something
 hook.Add("InitPostEntity", "nte_load", function()
 	timer.Simple(1, function()
-		if CalcViewPS then CalcViewPS.AddToTop("nte_main", main) end
+		if CalcViewPS then CalcViewPS.AddToTop("nte_main", main, CalcViewPS.PerspectiveENUM.THIRDPERSON) end
 	end)
 end)
 
