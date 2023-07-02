@@ -219,12 +219,17 @@ local curr_head_pos = Vector()
 local function main(ply, pos, angles, fov, znear, zfar)
 	calculate_ft()
 
-	if cv_ft <= 0 then print("[CTV] frametime is lower or equal to zero... wtf?") return end
-
-	if GetViewEntity():GetPos():Distance(LocalPlayer():GetPos()) > 5 or LocalPlayer():Health() <= 0 or not enabled:GetBool() then
+	if GetViewEntity():GetPos():Distance(LocalPlayer():GetPos()) > 5 or LocalPlayer():Health() <= 0 then
 		wish_pos = Vector()
 		lerped_pos = Vector()
-	 	return
+		return {
+			origin = pos,
+			angles = angles,
+			fov = fov,
+			drawviewer = false,
+			znear = znear,
+			zfar = zfar
+		}
 	end
 
 	if wish_pos:IsZero() or lerped_pos:IsZero() then
@@ -315,8 +320,6 @@ local function main(ply, pos, angles, fov, znear, zfar)
 	lerped_fov = approach(lerped_fov, wish_fov, af)
 	lerped_pos = approach_vec(lerped_pos, wish_pos, af)
 
-	znear = 1
-
 	local view = {
 		origin = lerped_pos,
 		angles = angles + walk_viewbob + drunk_view,
@@ -336,10 +339,18 @@ end
 
 // note: cause of the priority system hot reloading this script will cause errors.
 //		 either switch to using raw calcview or rejoin the server everytime you change something
+local _init = false
 hook.Add("InitPostEntity", "nte_load", function()
 	timer.Simple(1, function()
-		if CalcViewPS then CalcViewPS.AddToTop("nte_main", main, CalcViewPS.PerspectiveENUM.THIRDPERSON) end
+		if enabled:GetBool() and CalcViewPS then CalcViewPS.AddToTop("nte_main", main, CalcViewPS.PerspectiveENUM.THIRDPERSON) end
+		_init = true
 	end)
+end)
+
+cvars.AddChangeCallback(enabled:GetName(), function()
+	if not CalcViewPS or not _init then return end
+	if enabled:GetBool() then CalcViewPS.AddToTop("nte_main", main, CalcViewPS.PerspectiveENUM.THIRDPERSON) end
+	if not enabled:GetBool() then CalcViewPS.Remove("nte_main") end
 end)
 
 //hook.Add("CalcView", "nte_dev_main", main)
