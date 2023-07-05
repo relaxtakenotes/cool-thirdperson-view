@@ -19,6 +19,9 @@ local default_side = CreateConVar("cl_nte_default_side", -1, FCVAR_ARCHIVE)
 
 local box_size_2 = CreateConVar("cl_nte_vischeck_size", "5", FCVAR_ARCHIVE)
 
+local ft_samples_limit = CreateConVar("cl_nte_frametime_avg_limit", 10, FCVAR_ARCHIVE, "amount of samples used to average the frametime, if used.")
+local ft_mode = CreateConVar("cl_nte_frametime_mode", 0, FCVAR_ARCHIVE, "0 - engine.AbsoluteFrameTime(), 1 - an average over 10 samples")
+
 local _mins = Vector(-box_size_2:GetFloat(), -box_size_2:GetFloat(), -box_size_2:GetFloat())
 local _maxs = Vector(box_size_2:GetFloat(), box_size_2:GetFloat(), box_size_2:GetFloat())
 
@@ -36,6 +39,10 @@ local lerped_angle_offset = Angle()
 
 local move_back = false
 
+local ft_samples = {}
+cvars.AddChangeCallback(ft_samples_limit:GetName(), function()
+	ft_samples = {}
+end)
 local cv_ft = 0
 local cv_time = 0
 
@@ -158,8 +165,22 @@ local function calculate_side(angles, plytrace)
 end
 
 local function calculate_ft()
-	// i had a whole algorithm to average frametime out but now... i DONT FUCKING NEED IT? OK BRO
-	cv_ft = engine.AbsoluteFrameTime()
+	local _ft = engine.AbsoluteFrameTime()
+
+	table.insert(ft_samples, _ft)
+	local ft_sum = 0
+	for i, ft in ipairs(ft_samples) do
+		ft_sum = ft_sum + ft
+	end
+	if table.Count(ft_samples) > ft_samples_limit:GetInt() then
+		table.remove(ft_samples, 1)
+	end
+
+	if ft_mode:GetInt() == 1 then
+		cv_ft = ft_sum / table.Count(ft_samples)
+	else
+		cv_ft = _ft
+	end
 
 	// math fuckery where instead of being able to multiply cv_time by some factor i have to do this shit to speed up viewbobbing.
 	// maybe i'm just bad.
@@ -275,10 +296,6 @@ local function main(ply, pos, angles, fov, znear, zfar)
 		zoom_offset = angles:Forward() * 20
 	end
 
-	local crouch_offset = Vector()
-	if ply:Crouching() then crouch_offset.z = crouch_offset.z + 18 end
-
-
 	// i'm not gonna spend my time trying to figure out what variable, function or whatever is needed or not for each mode
 	// receive this instead.
 	// todo: figure out a way to smoothly get rid of the head or smth
@@ -297,7 +314,7 @@ local function main(ply, pos, angles, fov, znear, zfar)
 
 	local tr = {}
 	if mode:GetInt() == 0 then
-		tr = run_hull_trace(pos, pos - angles:Forward() * distance:GetFloat() * 3 + player_velocity * cv_ft * weird_magic_number * 0.6 + walk_viewbob_pos + drunk_pos + crouch_offset - side_offset - zoom_offset)
+		tr = run_hull_trace(pos, pos - angles:Forward() * distance:GetFloat() * 3 + player_velocity * cv_ft * weird_magic_number * 0.6 + walk_viewbob_pos + drunk_pos - side_offset - zoom_offset)
 		move_back = false
 	elseif mode:GetInt() == 1 then
 		local head_prediction = Vector()
@@ -352,6 +369,7 @@ cvars.AddChangeCallback(enabled:GetName(), function()
 	if enabled:GetBool() then CalcViewPS.AddToTop("nte_main", main, CalcViewPS.PerspectiveENUM.THIRDPERSON) end
 	if not enabled:GetBool() then CalcViewPS.Remove("nte_main") end
 end)
+//hook.Add("CalcView", "nte_dev_main", main)
 
 concommand.Add("cl_nte_reset", function()
 	enabled:Revert()
@@ -373,7 +391,6 @@ concommand.Add("cl_nte_reset", function()
 	box_size_2:Revert()
 end)
 
-//hook.Add("CalcView", "nte_dev_main", main)
 
 local function preferences(Panel)
 	Panel:CheckBox("Enabled", enabled:GetName())
