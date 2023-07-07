@@ -297,6 +297,11 @@ hook.Add("RenderScreenspaceEffects", "nte_crosshair", function()
 	draw_circle(tos.x, tos.y, 2 * vars.crosshair_size:GetFloat(), 100 * vars.crosshair_size:GetFloat())
 end)
 
+local wish_limit_upper = -85
+local wish_limit_lower = 65
+local lerped_limit_upper = -85
+local lerped_limit_lower = 65
+
 hook.Add("CreateMove", "nte_get_away_from_the_wall", function(cmd)
 	if move_back and LocalPlayer():GetMoveType() == MOVETYPE_WALK then
 		cmd:SetForwardMove(-100000)
@@ -305,14 +310,16 @@ hook.Add("CreateMove", "nte_get_away_from_the_wall", function(cmd)
 	if vars.hybrid_firstperson:GetBool() then
 		local ang = cmd:GetViewAngles()
 		local ang_offset = 0
-		if LocalPlayer():Crouching() then ang_offset = 15 end
+		wish_limit_upper = -85
+		wish_limit_lower = 65
+		if LocalPlayer():KeyDown(IN_DUCK) then 
+			wish_limit_upper = wish_limit_upper + 15
+			wish_limit_lower = wish_limit_lower - 15
+		end
+		lerped_limit_upper = approach(lerped_limit_upper, wish_limit_upper, 10)
+		lerped_limit_lower = approach(lerped_limit_lower, wish_limit_lower, 10)
 
-		if ang.x > 65 - ang_offset then
-			ang.x = 65 - ang_offset
-		end
-		if ang.x < -85 - ang_offset then
-			ang.x = -85 + ang_offset
-		end
+		ang.x = math.Clamp(ang.x, lerped_limit_upper, lerped_limit_lower)
 		cmd:SetViewAngles(ang)
 	end
 end)
@@ -401,11 +408,11 @@ local function main(ply, pos, angles, fov, znear, zfar)
 	local head_velocity = curr_head_pos - last_head_pos - player_velocity * cv_ft
 
 	local tr = {}
+	local head_prediction = Vector()
 	if vars.mode:GetInt() == 0 then
 		tr = run_hull_trace(pos, pos - angles:Forward() * vars.distance:GetFloat() * 3 + player_velocity * cv_ft * weird_magic_number * 0.6 + walk_viewbob_pos + drunk_pos - side_offset - zoom_offset)
 		move_back = false
 	elseif vars.mode:GetInt() == 1 then
-		local head_prediction = Vector()
 
 		if vars.predict_head:GetBool() then
 			head_prediction = head_velocity * cv_ft * weird_magic_number * 100
@@ -444,8 +451,6 @@ local function main(ply, pos, angles, fov, znear, zfar)
 		zfar = zfar
 	}
 
-	camera_pos_diff = pos - lerped_pos
-
 	return view
 end
 
@@ -454,11 +459,11 @@ local lerped_vm_ang = Angle()
 
 local function main_vm(wep, vm, oldpos, oldang, pos, ang)
 	if not vars.hybrid_firstperson:GetBool() then return end
-	pos:Sub(camera_pos_diff)
+	pos:Sub(oldpos - lerped_pos)
 
 	local tr = util.TraceLine({
-		start = pos,
-		endpos = pos + ang:Forward() * vm:GetModelRadius(),
+		start = oldpos,
+		endpos = oldpos + ang:Forward() * vm:GetModelRadius(),
 		filter = LocalPlayer()
 	})
 
@@ -469,7 +474,7 @@ local function main_vm(wep, vm, oldpos, oldang, pos, ang)
 
 	wish_vm_ang = (hitpos - pos):Angle()
 	wish_vm_ang:Normalize()
-	lerped_vm_ang = approach_ang(lerped_vm_ang, wish_vm_ang, 20)
+	lerped_vm_ang = approach_ang(lerped_vm_ang, wish_vm_ang, 25)
 	lerped_vm_ang:Normalize()
 	ang:Set(lerped_vm_ang)
 end
