@@ -309,10 +309,9 @@ hook.Add("CreateMove", "nte_get_away_from_the_wall", function(cmd)
 
 	if vars.hybrid_firstperson:GetBool() then
 		local ang = cmd:GetViewAngles()
-		local ang_offset = 0
 		wish_limit_upper = -85
 		wish_limit_lower = 65
-		if LocalPlayer():KeyDown(IN_DUCK) then 
+		if LocalPlayer():KeyDown(IN_DUCK) then
 			wish_limit_upper = wish_limit_upper + 15
 			wish_limit_lower = wish_limit_lower - 15
 		end
@@ -326,7 +325,6 @@ end)
 
 local last_head_pos = Vector()
 local curr_head_pos = Vector()
-local camera_pos_diff = Vector()
 
 local function main(ply, pos, angles, fov, znear, zfar)
 	calculate_ft()
@@ -459,6 +457,9 @@ local lerped_vm_ang = Angle()
 
 local function main_vm(wep, vm, oldpos, oldang, pos, ang)
 	if not vars.hybrid_firstperson:GetBool() then return end
+
+	vars.mode:SetInt(1)
+
 	pos:Sub(oldpos - lerped_pos)
 
 	local tr = util.TraceLine({
@@ -474,32 +475,29 @@ local function main_vm(wep, vm, oldpos, oldang, pos, ang)
 
 	wish_vm_ang = (hitpos - pos):Angle()
 	wish_vm_ang:Normalize()
-	lerped_vm_ang = approach_ang(lerped_vm_ang, wish_vm_ang, 25)
+	lerped_vm_ang = approach_ang(lerped_vm_ang, wish_vm_ang, 20)
 	lerped_vm_ang:Normalize()
 	ang:Set(lerped_vm_ang)
 end
 
--- this would the the preferred way to do it, but sadly due to mod loading order sometimes it can |not execute|	
---hook.Add("CalcViewPS_Initialized", "nte_load", function()
---		CalcViewPS.AddToTop("nte_main", main)
---end)
 -- note: cause of the priority system hot reloading this script will cause errors.
 --		 either switch to using raw calcview or rejoin the server everytime you change something
---local _init = false
---hook.Add("InitPostEntity", "nte_load", function()
---	timer.Simple(1, function()
---		if enabled:GetBool() and CalcViewPS then CalcViewPS.AddToTop("nte_main", main, CalcViewPS.PerspectiveENUM.THIRDPERSON) end
---		_init = true
---	end)
---end)
---
---cvars.AddChangeCallback(enabled:GetName(), function()
---	if not CalcViewPS or not _init then return end
---	if enabled:GetBool() then CalcViewPS.AddToTop("nte_main", main, CalcViewPS.PerspectiveENUM.THIRDPERSON) end
---	if not enabled:GetBool() then CalcViewPS.Remove("nte_main") end
---end)
-hook.Add("CalcView", "nte_dev_main", main)
-hook.Add("CalcViewModelView", "nte_dev_main_vm", main_vm)
+local _init = false
+hook.Add("InitPostEntity", "nte_load", function()
+	timer.Simple(1, function()
+		if vars.enabled:GetBool() and CalcViewPS then CalcViewPS.AddToTop("nte_main", main, CalcViewPS.PerspectiveENUM.THIRDPERSON) end
+		_init = true
+	end)
+end)
+
+cvars.AddChangeCallback(vars.enabled:GetName(), function()
+	if not CalcViewPS or not _init then return end
+	if vars.enabled:GetBool() then CalcViewPS.AddToTop("nte_main", main, CalcViewPS.PerspectiveENUM.THIRDPERSON) end
+	if not vars.enabled:GetBool() then CalcViewPS.Remove("nte_main") end
+end)
+
+--hook.Add("CalcView", "nte_dev_main", main)
+hook.Add("CalcViewModelView", "nte_main_vm", main_vm)
 
 concommand.Add("cl_nte_reset", function()
 	for name, element in pairs(vars) do
@@ -519,6 +517,7 @@ local function preferences(Panel)
 	Panel:CheckBox("Enabled", vars.enabled:GetName())
 	Panel:NumSlider("Mode", vars.mode:GetName(), 0, 1, 0)
 	Panel:ControlHelp("1 - immersive firstperson, 0 - thirdperson")
+	Panel:CheckBox("Hybrid Immersive Firstperson", vars.hybrid_firstperson:GetName())
 	Panel:ControlHelp("")
 	Panel:CheckBox("Crosshair Enabled", vars.crosshair_enabled:GetName())
 	Panel:CheckBox("Crosshair Black Outline", vars.crosshair_outline:GetName())
