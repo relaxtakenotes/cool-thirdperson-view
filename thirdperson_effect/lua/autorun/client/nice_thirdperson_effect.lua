@@ -34,7 +34,15 @@ local vars = {
 	ft_samples_limit = CreateConVar("cl_nte_frametime_avg_limit", 10, FCVAR_ARCHIVE, "amount of samples used to average the frametime, if used."),
 	ft_mode = CreateConVar("cl_nte_frametime_mode", 0, FCVAR_ARCHIVE, "0 - engine.AbsoluteFrameTime(), 1 - an average over 10 samples"),
 	hybrid_firstperson = CreateConVar("cl_nte_hybrid_firstperson", "0", FCVAR_ARCHIVE),
+	thirdperson_offset = CreateConVar("cl_nte_thirdperson_offset", "0 0 0", FCVAR_ARCHIVE)
 }
+
+concommand.Add("cl_nte_switch_mode", function()
+	local mode = vars.mode:GetInt()
+	mode = mode + 1
+	if mode > 1 then mode = 0 end
+	vars.mode:SetInt(mode)
+end)
 
 local _mins = Vector(-vars.box_size_2:GetFloat(), -vars.box_size_2:GetFloat(), -vars.box_size_2:GetFloat())
 local _maxs = Vector(vars.box_size_2:GetFloat(), vars.box_size_2:GetFloat(), vars.box_size_2:GetFloat())
@@ -104,7 +112,7 @@ local function _is_left()
 end
 
 local function trace_check(ent)
-	if ent:IsNPC() or ent:IsPlayer() then return false end
+	if ent:IsNPC() or ent:IsPlayer() then return false else return true end
 end
 
 local function run_hull_trace(start, endpos)
@@ -408,7 +416,10 @@ local function main(ply, pos, angles, fov, znear, zfar)
 	local tr = {}
 	local head_prediction = Vector()
 	if vars.mode:GetInt() == 0 then
-		tr = run_hull_trace(pos, pos - angles:Forward() * vars.distance:GetFloat() * 3 + player_velocity * cv_ft * weird_magic_number * 0.6 + walk_viewbob_pos + drunk_pos - side_offset - zoom_offset)
+		local _offset = string.Split(vars.thirdperson_offset:GetString(), " ")
+		local t_offset = Vector(_offset[1], _offset[2], _offset[3])
+
+		tr = run_hull_trace(pos, pos - angles:Forward() * vars.distance:GetFloat() * 3 + player_velocity * cv_ft * weird_magic_number * 0.6 + walk_viewbob_pos + drunk_pos - side_offset - zoom_offset + t_offset)
 		move_back = false
 	elseif vars.mode:GetInt() == 1 then
 
@@ -425,9 +436,10 @@ local function main(ply, pos, angles, fov, znear, zfar)
 	end
 
 	wish_pos = tr.HitPos
-	if vars.hybrid_firstperson:GetBool() and ply:KeyDown(IN_ATTACK2) then
+	if vars.hybrid_firstperson:GetBool() and ply:KeyDown(IN_ATTACK2) and (vars.hybrid_firstperson:GetBool() and vars.mode:GetInt() == 1) then
 		wish_pos = pos
 	end
+
 	lerped_pos = approach_vec(lerped_pos, wish_pos, af)
 
 	wish_fov = math.Remap(tr.Fraction, 0, 1, vars.wish_fov_max:GetFloat(), vars.wish_fov_min:GetFloat()) - zoom_fov_offset
@@ -444,7 +456,7 @@ local function main(ply, pos, angles, fov, znear, zfar)
 		origin = lerped_pos,
 		angles = angles + walk_viewbob + drunk_view,
 		fov = lerped_fov,
-		drawviewer = not vars.hybrid_firstperson:GetBool(),
+		drawviewer = not (vars.hybrid_firstperson:GetBool() and vars.mode:GetInt() == 1),
 		znear = znear,
 		zfar = zfar
 	}
@@ -457,8 +469,6 @@ local lerped_vm_ang = Angle()
 
 local function main_vm(wep, vm, oldpos, oldang, pos, ang)
 	if not vars.hybrid_firstperson:GetBool() then return end
-
-	vars.mode:SetInt(1)
 
 	pos:Sub(oldpos - lerped_pos)
 
