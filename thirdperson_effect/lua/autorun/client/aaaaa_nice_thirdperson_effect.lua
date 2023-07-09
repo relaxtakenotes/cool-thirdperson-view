@@ -1,8 +1,8 @@
 local vars = {
 	enabled = CreateConVar("cl_nte_enabled", "1", FCVAR_ARCHIVE),
 	mode = CreateConVar("cl_nte_mode", "0", FCVAR_ARCHIVE, "0 - thirdperson, 1 - immersive firstperson"),
-	wish_fov_max = CreateConVar("cl_nte_wish_fov_max", "110", FCVAR_ARCHIVE),
-	wish_fov_min = CreateConVar("cl_nte_wish_fov_min", "75", FCVAR_ARCHIVE),
+	wish_fov_max = CreateConVar("cl_nte_wish_fov_max", "20", FCVAR_ARCHIVE),
+	wish_fov_min = CreateConVar("cl_nte_wish_fov_min", "0", FCVAR_ARCHIVE),
 	distance = CreateConVar("cl_nte_distance", "20", FCVAR_ARCHIVE),
 	eyetrace_distance = CreateConVar("cl_nte_eyetrace_distance", "500", FCVAR_ARCHIVE),
 	visibility_tolerance = CreateConVar("cl_nte_vis_tolerance", "0.8", FCVAR_ARCHIVE),
@@ -34,7 +34,8 @@ local vars = {
 	ft_samples_limit = CreateConVar("cl_nte_frametime_avg_limit", 10, FCVAR_ARCHIVE, "amount of samples used to average the frametime, if used."),
 	ft_mode = CreateConVar("cl_nte_frametime_mode", 0, FCVAR_ARCHIVE, "0 - engine.AbsoluteFrameTime(), 1 - an average over 10 samples"),
 	hybrid_firstperson = CreateConVar("cl_nte_hybrid_firstperson", "0", FCVAR_ARCHIVE),
-	thirdperson_offset = CreateConVar("cl_nte_thirdperson_offset", "0 0 0", FCVAR_ARCHIVE)
+	thirdperson_offset = CreateConVar("cl_nte_thirdperson_offset", "0 0 0", FCVAR_ARCHIVE),
+	fov_thing_was_reset = CreateConVar("cl_nte_fov_thing_was_reset_lol_epic", 0, FCVAR_ARCHIVE)
 }
 
 concommand.Add("cl_nte_switch_mode", function()
@@ -46,8 +47,8 @@ end)
 
 local _mins = Vector(-vars.box_size_2:GetFloat(), -vars.box_size_2:GetFloat(), -vars.box_size_2:GetFloat())
 local _maxs = Vector(vars.box_size_2:GetFloat(), vars.box_size_2:GetFloat(), vars.box_size_2:GetFloat())
-local wish_fov = 75
-local lerped_fov = 75
+local wish_fov = 0
+local lerped_fov = 0
 local wish_pos = Vector()
 local lerped_pos = Vector()
 local wish_fraction = 1
@@ -305,9 +306,9 @@ hook.Add("RenderScreenspaceEffects", "nte_crosshair", function()
 	draw_circle(tos.x, tos.y, 2 * vars.crosshair_size:GetFloat(), 100 * vars.crosshair_size:GetFloat())
 end)
 
-local wish_limit_upper = -85
+local wish_limit_upper = -80
 local wish_limit_lower = 65
-local lerped_limit_upper = -85
+local lerped_limit_upper = -80
 local lerped_limit_lower = 65
 
 hook.Add("CreateMove", "nte_get_away_from_the_wall", function(cmd)
@@ -315,9 +316,9 @@ hook.Add("CreateMove", "nte_get_away_from_the_wall", function(cmd)
 		cmd:SetForwardMove(-100000)
 	end
 
-	if vars.hybrid_firstperson:GetBool() then
+	if vars.hybrid_firstperson:GetBool() and vars.mode:GetInt() == 1 then
 		local ang = cmd:GetViewAngles()
-		wish_limit_upper = -85
+		wish_limit_upper = -80
 		wish_limit_lower = 65
 		if LocalPlayer():KeyDown(IN_DUCK) then
 			wish_limit_upper = wish_limit_upper + 15
@@ -334,22 +335,23 @@ end)
 local last_head_pos = Vector()
 local curr_head_pos = Vector()
 
+NTE_CALC = false
+
 local function main(ply, pos, angles, fov, znear, zfar)
+	if NTE_CALC then return end
+
 	calculate_ft()
 
-	if GetViewEntity():GetPos():Distance(LocalPlayer():GetPos()) > 5 or LocalPlayer():Health() <= 0 then
+	if GetViewEntity():GetPos():Distance(LocalPlayer():GetPos()) > 5 or LocalPlayer():Health() <= 0 or not vars.enabled:GetBool() then
 		wish_pos = Vector()
 		lerped_pos = Vector()
-
-		return {
-			origin = pos,
-			angles = angles,
-			fov = fov,
-			drawviewer = false,
-			znear = znear,
-			zfar = zfar
-		}
+		return
 	end
+
+	NTE_CALC = true
+	local base_view = hook.Run("CalcView", ply, pos, angles, fov, znear, zfar)
+	pos, angles, fov, znear, zfar = base_view.origin or pos, base_view.angles or angles, base_view.fov or fov, base_view.znear or znear, base_view.zfar or zfar
+	NTE_CALC = false
 
 	if wish_pos:IsZero() or lerped_pos:IsZero() then
 		wish_pos = pos
@@ -394,13 +396,6 @@ local function main(ply, pos, angles, fov, znear, zfar)
 	end
 
 	lerped_angle_offset = approach_ang(lerped_angle_offset, wish_angle_offset, af)
-	local zoom_offset = Vector()
-	local zoom_fov_offset = 0
-
-	if ply:KeyDown(IN_ATTACK2) then
-		zoom_fov_offset = 20
-		zoom_offset = angles:Forward() * 20
-	end
 
 	ply:ManipulateBoneScale(ply:LookupBone("ValveBiped.Bip01_Head1"), Vector(1, 1, 1))
 	local headpos, headang = ply:GetBonePosition(ply:LookupBone("ValveBiped.Bip01_Head1"))
@@ -411,7 +406,7 @@ local function main(ply, pos, angles, fov, znear, zfar)
 
 	local weird_magic_number = ((1 / cv_ft) - af) / af -- used to compensate for player/head velocity, so that the camera is still smooth but is stuck to the player
 	local player_velocity = LocalPlayer():GetVelocity()
-	local head_velocity = curr_head_pos - last_head_pos - player_velocity * cv_ft
+	local head_velocity = ((curr_head_pos - last_head_pos) - (player_velocity * cv_ft)) * weird_magic_number
 
 	local tr = {}
 	local head_prediction = Vector()
@@ -419,12 +414,12 @@ local function main(ply, pos, angles, fov, znear, zfar)
 		local _offset = string.Split(vars.thirdperson_offset:GetString(), " ")
 		local t_offset = Vector(_offset[1], _offset[2], _offset[3])
 
-		tr = run_hull_trace(pos, pos - angles:Forward() * vars.distance:GetFloat() * 3 + player_velocity * cv_ft * weird_magic_number * 0.6 + walk_viewbob_pos + drunk_pos - side_offset - zoom_offset + t_offset)
+		tr = run_hull_trace(pos, pos - angles:Forward() * vars.distance:GetFloat() * 3 + player_velocity * cv_ft * weird_magic_number * 0.6 + walk_viewbob_pos + drunk_pos - side_offset + t_offset)
 		move_back = false
 	elseif vars.mode:GetInt() == 1 then
 
 		if vars.predict_head:GetBool() then
-			head_prediction = head_velocity * cv_ft * weird_magic_number * 100
+			head_prediction = head_velocity
 		end
 
 		tr = run_hull_trace(pos, c_headpos + player_velocity * cv_ft * weird_magic_number + walk_viewbob_pos + drunk_pos + head_prediction)
@@ -442,7 +437,7 @@ local function main(ply, pos, angles, fov, znear, zfar)
 
 	lerped_pos = approach_vec(lerped_pos, wish_pos, af)
 
-	wish_fov = math.Remap(tr.Fraction, 0, 1, vars.wish_fov_max:GetFloat(), vars.wish_fov_min:GetFloat()) - zoom_fov_offset
+	wish_fov = math.Remap(tr.Fraction, 0, 1, vars.wish_fov_max:GetFloat(), vars.wish_fov_min:GetFloat())
 	lerped_fov = approach(lerped_fov, wish_fov, af)
 
 	wish_fraction = math.Clamp(tr.Fraction, 0.2, 0.6)
@@ -455,11 +450,13 @@ local function main(ply, pos, angles, fov, znear, zfar)
 	local view = {
 		origin = lerped_pos,
 		angles = angles + walk_viewbob + drunk_view,
-		fov = lerped_fov,
+		fov = math.Clamp(fov + lerped_fov, 0.01, 179),
 		drawviewer = not (vars.hybrid_firstperson:GetBool() and vars.mode:GetInt() == 1),
-		znear = znear,
+		znear = 0.5,
 		zfar = zfar
 	}
+
+	print(fov, lerped_fov)
 
 	return view
 end
@@ -468,7 +465,7 @@ local wish_vm_ang = Angle()
 local lerped_vm_ang = Angle()
 
 local function main_vm(wep, vm, oldpos, oldang, pos, ang)
-	if not vars.hybrid_firstperson:GetBool() then return end
+	if not vars.hybrid_firstperson:GetBool() or not vars.enabled:GetBool() then return end
 
 	pos:Sub(oldpos - lerped_pos)
 
@@ -490,24 +487,21 @@ local function main_vm(wep, vm, oldpos, oldang, pos, ang)
 	ang:Set(lerped_vm_ang)
 end
 
--- note: cause of the priority system hot reloading this script will cause errors.
---		 either switch to using raw calcview or rejoin the server everytime you change something
-local _init = false
+// aaaa_ probably does nothing lol
+hook.Add("CalcView", "aaaa_nte_main", main)
+hook.Add("CalcViewModelView", "aaaa_nte_main_vm", main_vm)
+
 hook.Add("InitPostEntity", "nte_load", function()
 	timer.Simple(1, function()
-		if vars.enabled:GetBool() and CalcViewPS then CalcViewPS.AddToTop("nte_main", main, CalcViewPS.PerspectiveENUM.THIRDPERSON) end
-		_init = true
+		if not vars.fov_thing_was_reset:GetBool() then
+			vars.wish_fov_max:Revert()
+			vars.wish_fov_min:Revert()
+			vars.fov_thing_was_reset:SetBool(true)
+		end
 	end)
 end)
 
-cvars.AddChangeCallback(vars.enabled:GetName(), function()
-	if not CalcViewPS or not _init then return end
-	if vars.enabled:GetBool() then CalcViewPS.AddToTop("nte_main", main, CalcViewPS.PerspectiveENUM.THIRDPERSON) end
-	if not vars.enabled:GetBool() then CalcViewPS.Remove("nte_main") end
-end)
 
---hook.Add("CalcView", "nte_dev_main", main)
-hook.Add("CalcViewModelView", "nte_main_vm", main_vm)
 
 concommand.Add("cl_nte_reset", function()
 	for name, element in pairs(vars) do
@@ -540,8 +534,8 @@ local function preferences(Panel)
 	Panel:CheckBox("Predict Head Movement", vars.predict_head:GetName())
 	Panel:ControlHelp("This accounts for your head movement when you're in firstperson, recommended for use with render head on, otherwise keep this off. (mode: 1)")
 	Panel:ControlHelp("")
-	Panel:NumSlider("Max wish fov", vars.wish_fov_max:GetName(), 75, 120)
-	Panel:NumSlider("Min wish fov", vars.wish_fov_min:GetName(), 75, 120)
+	Panel:NumSlider("Max wish fov", vars.wish_fov_max:GetName(), 0, 65)
+	Panel:NumSlider("Min wish fov", vars.wish_fov_min:GetName(), 0, 65)
 	Panel:NumSlider("Camera distance", vars.distance:GetName(), 0, 200)
 	Panel:ControlHelp("")
 	Panel:NumSlider("Walk Viewbob multiplier", vars.viewbob_mult_walk:GetName(), 0, 10, 1)
