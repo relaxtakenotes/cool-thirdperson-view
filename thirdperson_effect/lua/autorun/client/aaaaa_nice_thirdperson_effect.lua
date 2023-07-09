@@ -456,8 +456,6 @@ local function main(ply, pos, angles, fov, znear, zfar)
 		zfar = zfar
 	}
 
-	print(fov, lerped_fov)
-
 	return view
 end
 
