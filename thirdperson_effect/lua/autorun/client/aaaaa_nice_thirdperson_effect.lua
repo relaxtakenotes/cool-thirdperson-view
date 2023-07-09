@@ -299,11 +299,11 @@ hook.Add("RenderScreenspaceEffects", "nte_crosshair", function()
 
 	if vars.crosshair_outline:GetBool() then
 		surface.SetDrawColor(0, 0, 0, vars.crosshair_color.a:GetFloat())
-		draw_circle(tos.x, tos.y, 4 * vars.crosshair_size:GetFloat(), 100 * vars.crosshair_size:GetFloat())
+		draw_circle(tos.x, tos.y, 4 * vars.crosshair_size:GetFloat(), 10 * vars.crosshair_size:GetFloat())
 	end
 
 	surface.SetDrawColor(color:Unpack())
-	draw_circle(tos.x, tos.y, 2 * vars.crosshair_size:GetFloat(), 100 * vars.crosshair_size:GetFloat())
+	draw_circle(tos.x, tos.y, 2 * vars.crosshair_size:GetFloat(), 10 * vars.crosshair_size:GetFloat())
 end)
 
 local wish_limit_upper = -80
