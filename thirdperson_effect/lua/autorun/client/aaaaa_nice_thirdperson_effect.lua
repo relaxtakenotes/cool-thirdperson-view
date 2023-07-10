@@ -57,6 +57,7 @@ local wish_angle_offset = Angle()
 local lerped_angle_offset = Angle()
 local move_back = false
 local ft_samples = {}
+local calcview_running = false
 
 cvars.AddChangeCallback(vars.ft_samples_limit:GetName(), function()
 	ft_samples = {}
@@ -83,12 +84,8 @@ local function _approach_ang(n1, n2, factor)
 end
 
 local function approach_vec(v1, v2, factor)
-	local temp = Vector()
-	temp.x = approach(v1.x, v2.x, factor)
-	temp.y = approach(v1.y, v2.y, factor)
-	temp.z = approach(v1.z, v2.z, factor)
-
-	return temp
+	// there's no guarantee it wont go over the wish vector. in our use case though it's completely fine.
+	return v1 + (v2 - v1) * cv_ft * factor
 end
 
 local function approach_ang(v1, v2, factor)
@@ -278,7 +275,8 @@ local function draw_circle(x, y, radius, seg)
 end
 
 hook.Add("RenderScreenspaceEffects", "nte_crosshair", function()
-	if not vars.enabled:GetBool() or not vars.crosshair_enabled:GetBool() then return end
+	if not vars.enabled:GetBool() or not vars.crosshair_enabled:GetBool() or not calcview_running then return end
+
 	local tr = LocalPlayer():GetEyeTrace()
 
 	local visibilitytr = util.TraceLine({
@@ -352,6 +350,16 @@ local function main(ply, pos, angles, fov, znear, zfar)
 	local base_view = hook.Run("CalcView", ply, pos, angles, fov, znear, zfar)
 	pos, angles, fov, znear, zfar = base_view.origin or pos, base_view.angles or angles, base_view.fov or fov, base_view.znear or znear, base_view.zfar or zfar
 	NTE_CALC = false
+
+	// something modified our view drastically. it's a good idea to let them do their thing!
+	if pos:Distance(LocalPlayer():EyePos()) > 5 then
+		wish_pos = Vector()
+		lerped_pos = Vector()
+		return
+	end
+
+	calcview_running = true
+	timer.Simple(cv_ft*2, function() calcview_running = false end)
 
 	if wish_pos:IsZero() or lerped_pos:IsZero() then
 		wish_pos = pos
@@ -459,11 +467,11 @@ local function main(ply, pos, angles, fov, znear, zfar)
 	return view
 end
 
-local wish_vm_ang = Angle()
-local lerped_vm_ang = Angle()
+local wish_dir = Vector()
+local lerped_dir = Vector()
 
 local function main_vm(wep, vm, oldpos, oldang, pos, ang)
-	if not vars.hybrid_firstperson:GetBool() or not vars.enabled:GetBool() then return end
+	if not vars.hybrid_firstperson:GetBool() or not vars.enabled:GetBool() or not calcview_running then return end
 
 	pos:Sub(oldpos - lerped_pos)
 
@@ -474,15 +482,13 @@ local function main_vm(wep, vm, oldpos, oldang, pos, ang)
 	})
 
 	local frac = math.Remap(tr.Fraction, 0, 1, 1, 0)
-	local hitpos = Vector(LocalPlayer():GetEyeTrace().HitPos:Unpack())
 
-	hitpos:Add(ang:Forward() * frac * vm:GetModelRadius() * 0.7)
+	local hitpos = Vector(LocalPlayer():GetEyeTrace().HitPos:Unpack()) + ang:Forward() * frac * vm:GetModelRadius() * 0.7
 
-	wish_vm_ang = (hitpos - pos):Angle()
-	wish_vm_ang:Normalize()
-	lerped_vm_ang = approach_ang(lerped_vm_ang, wish_vm_ang, 20)
-	lerped_vm_ang:Normalize()
-	ang:Set(lerped_vm_ang)
+	wish_dir = (hitpos - pos):GetNormalized()
+	lerped_dir = approach_vec(lerped_dir, wish_dir, 20, "vm")
+
+	ang:Set(lerped_dir:Angle())
 end
 
 // aaaa_ probably does nothing lol
@@ -498,8 +504,6 @@ hook.Add("InitPostEntity", "nte_load", function()
 		end
 	end)
 end)
-
-
 
 concommand.Add("cl_nte_reset", function()
 	for name, element in pairs(vars) do
