@@ -354,11 +354,11 @@ local function main(ply, pos, angles, fov, znear, zfar)
 	NTE_CALC = false
 
 	// something modified our view drastically. it's a good idea to let them do their thing!
-	if pos:Distance(LocalPlayer():EyePos()) > 5 then
-		wish_pos = Vector()
-		lerped_pos = Vector()
-		return
-	end
+	//if pos:Distance(LocalPlayer():EyePos()) > 5 then
+	//	wish_pos = Vector()
+	//	lerped_pos = Vector()
+	//	return
+	//end
 
 	calcview_running = true
 	timer.Simple(cv_ft*2, function() calcview_running = false end)
