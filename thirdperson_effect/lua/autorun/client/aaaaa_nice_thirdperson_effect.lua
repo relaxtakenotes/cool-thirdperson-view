@@ -285,6 +285,8 @@ hook.Add("RenderScreenspaceEffects", "nte_crosshair", function()
 		filter = LocalPlayer()
 	})
 
+	debugoverlay.Line(lerped_pos, tr.HitPos, cv_ft, Color(100, 255, 100), true)
+
 	local color = nil
 
 	if visibilitytr.Fraction <= 0.99 then
@@ -296,7 +298,7 @@ hook.Add("RenderScreenspaceEffects", "nte_crosshair", function()
 	local tos = tr.HitPos:ToScreen()
 
 	if vars.crosshair_outline:GetBool() then
-		surface.SetDrawColor(0, 0, 0, vars.crosshair_color.a:GetFloat())
+		surface.SetDrawColor(0, 0, 0, color.a)
 		draw_circle(tos.x, tos.y, 4 * vars.crosshair_size:GetFloat(), 10 * vars.crosshair_size:GetFloat())
 	end
 
