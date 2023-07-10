@@ -488,7 +488,7 @@ local function main_vm(wep, vm, oldpos, oldang, pos, ang)
 	local hitpos = Vector(LocalPlayer():GetEyeTrace().HitPos:Unpack()) + ang:Forward() * frac * vm:GetModelRadius() * 0.7
 
 	wish_dir = (hitpos - pos):GetNormalized()
-	lerped_dir = approach_vec(lerped_dir, wish_dir, 20, "vm")
+	lerped_dir = approach_vec(lerped_dir, wish_dir, 20)
 
 	ang:Set(lerped_dir:Angle())
 end
