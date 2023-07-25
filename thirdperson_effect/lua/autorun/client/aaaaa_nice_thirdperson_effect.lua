@@ -294,7 +294,7 @@ hook.Add("RenderScreenspaceEffects", "nte_crosshair", function()
 
 	local tr = LocalPlayer():GetEyeTrace()
 
-	if GetConVar("sv_nte_manipulate_bullet_source"):GetBool() then 
+	if GetConVar("sv_nte_manipulate_bullet_source"):GetBool() and not (vars.hybrid_firstperson:GetBool() and vars.mode:GetInt() == 1) then 
 		local offset = LocalPlayer():EyePos() - LocalPlayer().hand_pos - EyeAngles():Up() * 2 - EyeAngles():Forward() * LocalPlayer().vm_radius * 0.75
 		tr = util.TraceLine({start = LocalPlayer():EyePos() - offset, endpos = (LocalPlayer():EyePos() - offset) + EyeAngles():Forward() * 99999 - offset, filter = LocalPlayer()})
 		debugoverlay.Line(tr.StartPos, tr.HitPos, cv_ft, Color(0, 255, 0), false)
@@ -528,8 +528,23 @@ hook.Add("PostPlayerDraw", "nte_send_vm_data", function(ply)
 	net.Start("nte_bone_positions")
 	net.WriteVector(lp.hand_pos)
 	net.WriteFloat(lp.vm_radius)
+	net.WriteBool(true)
 	net.SendToServer()
 end)
+
+local function invalidate_vm_data()
+	if (vars.hybrid_firstperson:GetBool() and vars.mode:GetInt() == 1) then
+		local lp = LocalPlayer()
+		net.Start("nte_bone_positions")
+		net.WriteVector(lp.hand_pos)
+		net.WriteFloat(lp.vm_radius)
+		net.WriteBool(false)
+		net.SendToServer()
+	end
+end
+
+cvars.AddChangeCallback(vars.hybrid_firstperson:GetName(), invalidate_vm_data)
+cvars.AddChangeCallback(vars.mode:GetName(), invalidate_vm_data)
 
 hook.Add("InitPostEntity", "nte_load", function()
 	timer.Simple(1, function()

@@ -6,25 +6,29 @@ if SERVER then
 	net.Receive("nte_bone_positions", function(len, ply)
 		local hand_pos = net.ReadVector()
 		local vm_radius = math.Clamp(net.ReadFloat(), 0, 72)
+		local active = net.ReadBool()
 
 		local max_distance = 72 * ply:GetModelScale()
 		local distance = hand_pos:Distance(ply:GetShootPos())
 
 		if distance > max_distance then
-			hand_pos = hand_pos - ply:GetShootPos() * distance/max_distance
+			active = false
 		end
-
-		//print(distance/max_distance)
 
 		ply.hand_pos = hand_pos
 		ply.vm_radius = vm_radius
+
+		if not active then
+			ply.hand_pos = nil
+			ply.vm_radius = nil
+		end
 	end)
 end
 
 local running_other_hooks = false
 
 hook.Add("EntityFireBullets", "aaaa_nte_manipulate_bullets", function(entity, data)
-	if not mbs_enabled:GetBool() then return end
+	if not mbs_enabled:GetBool() or not entity.hand_pos or not entity.vm_radius then return end
 	if running_other_hooks then return end
 
 	running_other_hooks = true
