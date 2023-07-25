@@ -83,9 +83,24 @@ local function _approach_ang(n1, n2, factor)
 	return math.ApproachAngle(n1, n2, math.NormalizeAngle(math.abs(n1 - n2)) * factor * cv_ft + cv_ft)
 end
 
+local function limit_vector_dimension(dt, dv2)
+	if dt > dv2 then
+		return math.max(dt, dv2)
+	end
+	if dt < dv2 then
+		return math.min(dt, dv2)
+	end
+	return dt
+end
+
 local function approach_vec(v1, v2, factor)
-	// there's no guarantee it wont go over the wish vector. in our use case though it's completely fine.
-	return v1 + (v2 - v1) * cv_ft * factor
+	local t = v1 + (v2 - v1) * cv_ft * factor
+
+	t.x = limit_vector_dimension(t.x, v2.x)
+	t.y = limit_vector_dimension(t.y, v2.y)
+	t.z = limit_vector_dimension(t.z, v2.z)
+
+	return t
 end
 
 local function approach_ang(v1, v2, factor)
@@ -279,13 +294,17 @@ hook.Add("RenderScreenspaceEffects", "nte_crosshair", function()
 
 	local tr = LocalPlayer():GetEyeTrace()
 
+	if GetConVar("sv_nte_manipulate_bullet_source"):GetBool() then 
+		local offset = LocalPlayer():EyePos() - LocalPlayer().hand_pos - EyeAngles():Up() * 2 - EyeAngles():Forward() * LocalPlayer().vm_radius * 0.75
+		tr = util.TraceLine({start = LocalPlayer():EyePos() - offset, endpos = (LocalPlayer():EyePos() - offset) + EyeAngles():Forward() * 99999 - offset, filter = LocalPlayer()})
+		debugoverlay.Line(tr.StartPos, tr.HitPos, cv_ft, Color(0, 255, 0), false)
+	end
+
 	local visibilitytr = util.TraceLine({
 		start = lerped_pos,
 		endpos = tr.HitPos,
 		filter = LocalPlayer()
 	})
-
-	debugoverlay.Line(lerped_pos, tr.HitPos, cv_ft, Color(100, 255, 100), true)
 
 	local color = nil
 
@@ -352,13 +371,6 @@ local function main(ply, pos, angles, fov, znear, zfar)
 	local base_view = hook.Run("CalcView", ply, pos, angles, fov, znear, zfar)
 	pos, angles, fov, znear, zfar = base_view.origin or pos, base_view.angles or angles, base_view.fov or fov, base_view.znear or znear, base_view.zfar or zfar
 	NTE_CALC = false
-
-	// something modified our view drastically. it's a good idea to let them do their thing!
-	//if pos:Distance(LocalPlayer():EyePos()) > 5 then
-	//	wish_pos = Vector()
-	//	lerped_pos = Vector()
-	//	return
-	//end
 
 	calcview_running = true
 	timer.Simple(cv_ft*2, function() calcview_running = false end)
@@ -457,6 +469,10 @@ local function main(ply, pos, angles, fov, znear, zfar)
 	LocalPlayer():SetRenderMode(RENDERMODE_TRANSCOLOR)
 	LocalPlayer():SetColor(Color(255, 255, 255, math.Remap(lerped_fraction, 0.2, 0.6, 50, 255)))
 
+	if lerped_pos:Distance(LocalPlayer():EyePos()) > 64 + player_velocity:Length() then
+		lerped_pos = wish_pos
+	end
+
 	local view = {
 		origin = lerped_pos,
 		angles = angles + walk_viewbob + drunk_view,
@@ -496,6 +512,24 @@ end
 // aaaa_ probably does nothing lol
 hook.Add("CalcView", "aaaa_nte_main", main)
 hook.Add("CalcViewModelView", "aaaa_nte_main_vm", main_vm)
+
+hook.Add("PostPlayerDraw", "nte_send_vm_data", function(ply)
+	if not vars.enabled:GetBool() or not calcview_running then return end
+	local lp = LocalPlayer()
+	if ply != lp then return end
+
+	lp.hand_pos = lp:GetBoneMatrix(lp:LookupBone("ValveBiped.Bip01_R_Hand")):GetTranslation()
+	lp.vm_radius = lp:GetViewModel(0):GetModelRadius()
+
+	if lp:GetActiveWeapon().GetWM then
+		lp.vm_radius = lp:GetActiveWeapon():GetWM():GetModelRadius()
+	end
+
+	net.Start("nte_bone_positions")
+	net.WriteVector(lp.hand_pos)
+	net.WriteFloat(lp.vm_radius)
+	net.SendToServer()
+end)
 
 hook.Add("InitPostEntity", "nte_load", function()
 	timer.Simple(1, function()
