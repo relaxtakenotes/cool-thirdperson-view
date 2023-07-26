@@ -8,8 +8,10 @@ if SERVER then
 		local vm_radius = math.Clamp(net.ReadFloat(), 0, 72)
 		local active = net.ReadBool()
 
+		ply.head_pos = ply:GetBoneMatrix(ply:LookupBone("ValveBiped.Bip01_Head1")):GetTranslation()
+
 		local max_distance = 72 * ply:GetModelScale()
-		local distance = hand_pos:Distance(ply:GetShootPos())
+		local distance = hand_pos:Distance(ply.head_pos)
 
 		if distance > max_distance then
 			active = false
@@ -19,6 +21,7 @@ if SERVER then
 		ply.vm_radius = vm_radius
 
 		if not active then
+			ply.head_pos = nil
 			ply.hand_pos = nil
 			ply.vm_radius = nil
 		end
@@ -28,7 +31,7 @@ end
 local running_other_hooks = false
 
 hook.Add("EntityFireBullets", "aaaa_nte_manipulate_bullets", function(entity, data)
-	if not mbs_enabled:GetBool() or not entity.hand_pos or not entity.vm_radius then return end
+	if not mbs_enabled:GetBool() or not entity.hand_pos or not entity.vm_radius or not entity.head_pos then return end
 	if running_other_hooks then return end
 
 	running_other_hooks = true
@@ -37,16 +40,15 @@ hook.Add("EntityFireBullets", "aaaa_nte_manipulate_bullets", function(entity, da
 
 	if not entity:IsPlayer() then return end
 
-	//debugoverlay.Line(data.Src, data.Src + data.Dir * 1000, 5, Color(255, 0, 0), false)
+	debugoverlay.Line(data.Src, data.Src + data.Dir * 1000, 5, Color(255, 0, 0), false)
 
 	local offset = entity:EyePos() - entity.hand_pos - data.Dir:Angle():Up() * 2 - data.Dir:Angle():Forward() * entity.vm_radius * 0.75
 	local src = data.Src - offset
+	local src_tr = util.TraceLine({start = entity.head_pos, endpos = src, filter = entity})
 
-	if not util.TraceLine({start = src, endpos = src, filter = entity}).StartSolid then
-		data.Src = src
-	end
-
-	//debugoverlay.Line(data.Src, data.Src + data.Dir * 1000, 5, Color(0, 255, 0), false)
+	data.Src = src_tr.HitPos
+	
+	debugoverlay.Line(data.Src, data.Src + data.Dir * 1000, 5, Color(0, 255, 0), false)
 
 	return true
 end)

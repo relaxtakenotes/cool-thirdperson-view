@@ -434,9 +434,9 @@ local function main(ply, pos, angles, fov, znear, zfar)
 	local head_prediction = Vector()
 	if vars.mode:GetInt() == 0 then
 		local _offset = string.Split(vars.thirdperson_offset:GetString(), " ")
-		local t_offset = Vector(_offset[1], _offset[2], _offset[3])
+		local t_offset, _ = LocalToWorld(Vector(_offset[1], _offset[2], _offset[3]) , Angle(0, -90, -90), pos, angles)
 
-		tr = run_hull_trace(pos, pos - angles:Forward() * vars.distance:GetFloat() * 3 + player_velocity * cv_ft * weird_magic_number * 0.6 + walk_viewbob_pos + drunk_pos - side_offset + t_offset)
+		tr = run_hull_trace(pos, t_offset - angles:Forward() * vars.distance:GetFloat() * 3 + player_velocity * cv_ft * weird_magic_number * 0.6 + walk_viewbob_pos + drunk_pos - side_offset)
 		move_back = false
 	elseif vars.mode:GetInt() == 1 then
 
@@ -533,7 +533,7 @@ hook.Add("PostPlayerDraw", "nte_send_vm_data", function(ply)
 end)
 
 local function invalidate_vm_data()
-	if (vars.hybrid_firstperson:GetBool() and vars.mode:GetInt() == 1) then
+	if (vars.hybrid_firstperson:GetBool() and vars.mode:GetInt() == 1) or not vars.enabled:GetBool() then
 		local lp = LocalPlayer()
 		net.Start("nte_bone_positions")
 		net.WriteVector(lp.hand_pos)
@@ -545,6 +545,7 @@ end
 
 cvars.AddChangeCallback(vars.hybrid_firstperson:GetName(), invalidate_vm_data)
 cvars.AddChangeCallback(vars.mode:GetName(), invalidate_vm_data)
+cvars.AddChangeCallback(vars.enabled:GetName(), invalidate_vm_data)
 
 hook.Add("InitPostEntity", "nte_load", function()
 	timer.Simple(1, function()
