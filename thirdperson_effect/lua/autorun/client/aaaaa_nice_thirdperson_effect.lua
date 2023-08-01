@@ -35,7 +35,8 @@ local vars = {
 	ft_mode = CreateConVar("cl_nte_frametime_mode", 0, FCVAR_ARCHIVE, "0 - engine.AbsoluteFrameTime(), 1 - an average over 10 samples"),
 	hybrid_firstperson = CreateConVar("cl_nte_hybrid_firstperson", "0", FCVAR_ARCHIVE),
 	thirdperson_offset = CreateConVar("cl_nte_thirdperson_offset", "0 0 0", FCVAR_ARCHIVE),
-	fov_thing_was_reset = CreateConVar("cl_nte_fov_thing_was_reset_lol_epic", 0, FCVAR_ARCHIVE)
+	fov_thing_was_reset = CreateConVar("cl_nte_fov_thing_was_reset_lol_epic", 0, FCVAR_ARCHIVE),
+	znear = CreateConVar("cl_nte_znear", 1, FCVAR_ARCHIVE),
 }
 
 concommand.Add("cl_nte_switch_mode", function()
@@ -294,7 +295,7 @@ hook.Add("RenderScreenspaceEffects", "nte_crosshair", function()
 
 	local tr = LocalPlayer():GetEyeTrace()
 
-	if GetConVar("sv_nte_manipulate_bullet_source"):GetBool() and not (vars.hybrid_firstperson:GetBool() and vars.mode:GetInt() == 1) then 
+	if GetConVar("sv_nte_manipulate_bullet_source"):GetBool() and not (vars.hybrid_firstperson:GetBool() and vars.mode:GetInt() == 1) then
 		local offset = LocalPlayer():EyePos() - LocalPlayer().hand_pos - EyeAngles():Up() * 2 - EyeAngles():Forward() * LocalPlayer().vm_radius * 0.75
 		tr = util.TraceLine({start = LocalPlayer():EyePos() - offset, endpos = (LocalPlayer():EyePos() - offset) + EyeAngles():Forward() * 99999 - offset, filter = LocalPlayer()})
 		debugoverlay.Line(tr.StartPos, tr.HitPos, cv_ft, Color(0, 255, 0), false)
@@ -478,7 +479,7 @@ local function main(ply, pos, angles, fov, znear, zfar)
 		angles = angles + walk_viewbob + drunk_view,
 		fov = math.Clamp(fov + lerped_fov, 0.01, 179),
 		drawviewer = not (vars.hybrid_firstperson:GetBool() and vars.mode:GetInt() == 1),
-		znear = 0.5,
+		znear = vars.znear:GetFloat(),
 		zfar = zfar
 	}
 
@@ -514,15 +515,24 @@ hook.Add("CalcView", "aaaa_nte_main", main)
 hook.Add("CalcViewModelView", "aaaa_nte_main_vm", main_vm)
 
 hook.Add("PostPlayerDraw", "nte_send_vm_data", function(ply)
-	if not vars.enabled:GetBool() or not calcview_running then return end
+	if not vars.enabled:GetBool() or not calcview_running then
+		invalidate_vm_data(true)
+		return 
+	end
 	local lp = LocalPlayer()
 	if ply != lp then return end
 
-	lp.hand_pos = lp:GetBoneMatrix(lp:LookupBone("ValveBiped.Bip01_R_Hand")):GetTranslation()
+	local bone_matrix = lp:GetBoneMatrix(lp:LookupBone("ValveBiped.Bip01_R_Hand"))
+
+	lp.hand_pos = bone_matrix:GetTranslation()
 	lp.vm_radius = lp:GetViewModel(0):GetModelRadius()
 
 	if lp:GetActiveWeapon().GetWM then
 		lp.vm_radius = lp:GetActiveWeapon():GetWM():GetModelRadius()
+	end
+
+	if lp.vm_radius <= 0 and IsValid(lp:GetActiveWeapon()) and isfunction(lp:GetActiveWeapon().GetModelRadius) then
+		lp.vm_radius = lp:GetActiveWeapon():GetModelRadius() * 1.25
 	end
 
 	net.Start("nte_bone_positions")
@@ -532,8 +542,8 @@ hook.Add("PostPlayerDraw", "nte_send_vm_data", function(ply)
 	net.SendToServer()
 end)
 
-local function invalidate_vm_data()
-	if (vars.hybrid_firstperson:GetBool() and vars.mode:GetInt() == 1) or not vars.enabled:GetBool() then
+local function invalidate_vm_data(force)
+	if (vars.hybrid_firstperson:GetBool() and vars.mode:GetInt() == 1) or not vars.enabled:GetBool() or force then
 		local lp = LocalPlayer()
 		net.Start("nte_bone_positions")
 		net.WriteVector(lp.hand_pos)
