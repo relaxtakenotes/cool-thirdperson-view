@@ -530,18 +530,21 @@ hook.Add("PostPlayerDraw", "nte_send_vm_data", function(ply)
 		invalidate_vm_data(true)
 		return 
 	end
+
 	local lp = LocalPlayer()
 	if ply != lp then return end
 
 	local bone_matrix = lp:GetBoneMatrix(lp:LookupBone("ValveBiped.Bip01_R_Hand"))
 
-	lp.hand_pos = bone_matrix:GetTranslation()
-	lp.vm_radius = lp:GetViewModel(0):GetModelRadius()
+	lp.hand_pos = bone_matrix:GetTranslation() or Vector()
 
-	if lp:GetActiveWeapon().GetWM then
+	lp.vm_radius = 0
+	if lp:GetViewModel(0) and isfunction(lp.GetModelRadius) then
+		lp.vm_radius = lp:GetViewModel(0):GetModelRadius()
+	end
+	if lp.vm_radius <= 0 and lp:GetActiveWeapon().GetWM then
 		lp.vm_radius = lp:GetActiveWeapon():GetWM():GetModelRadius()
 	end
-
 	if lp.vm_radius <= 0 and IsValid(lp:GetActiveWeapon()) and isfunction(lp:GetActiveWeapon().GetModelRadius) then
 		lp.vm_radius = lp:GetActiveWeapon():GetModelRadius() * 1.25
 	end
