@@ -514,6 +514,17 @@ end
 hook.Add("CalcView", "aaaa_nte_main", main)
 hook.Add("CalcViewModelView", "aaaa_nte_main_vm", main_vm)
 
+local function invalidate_vm_data(force)
+	if (vars.hybrid_firstperson:GetBool() and vars.mode:GetInt() == 1) or not vars.enabled:GetBool() or force then
+		local lp = LocalPlayer()
+		net.Start("nte_bone_positions")
+		net.WriteVector(lp.hand_pos)
+		net.WriteFloat(lp.vm_radius)
+		net.WriteBool(false)
+		net.SendToServer()
+	end
+end
+
 hook.Add("PostPlayerDraw", "nte_send_vm_data", function(ply)
 	if not vars.enabled:GetBool() or not calcview_running then
 		invalidate_vm_data(true)
@@ -541,17 +552,6 @@ hook.Add("PostPlayerDraw", "nte_send_vm_data", function(ply)
 	net.WriteBool(true)
 	net.SendToServer()
 end)
-
-local function invalidate_vm_data(force)
-	if (vars.hybrid_firstperson:GetBool() and vars.mode:GetInt() == 1) or not vars.enabled:GetBool() or force then
-		local lp = LocalPlayer()
-		net.Start("nte_bone_positions")
-		net.WriteVector(lp.hand_pos)
-		net.WriteFloat(lp.vm_radius)
-		net.WriteBool(false)
-		net.SendToServer()
-	end
-end
 
 cvars.AddChangeCallback(vars.hybrid_firstperson:GetName(), invalidate_vm_data)
 cvars.AddChangeCallback(vars.mode:GetName(), invalidate_vm_data)
