@@ -39,6 +39,12 @@ local vars = {
 	znear = CreateConVar("cl_nte_znear", 1, FCVAR_ARCHIVE),
 }
 
+concommand.Add("cl_nte_toggle_state", function()
+    local enabled = vars.enabled:GetBool()
+    enabled = not enabled
+    vars.enabled:SetBool(enabled)
+end)
+
 concommand.Add("cl_nte_switch_mode", function()
 	local mode = vars.mode:GetInt()
 	mode = mode + 1
