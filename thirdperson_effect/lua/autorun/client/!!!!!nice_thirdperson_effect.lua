@@ -476,7 +476,7 @@ local function get_viewmodel_radius()
 	local wm = NULL
 
 	if isfunction(weapon.GetWM) then
-		return weapon:GetWM()
+		wm = weapon:GetWM()
 	end
 
 	if vm and isfunction(lp.GetModelRadius) then
