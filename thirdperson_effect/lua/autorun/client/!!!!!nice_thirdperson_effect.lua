@@ -110,7 +110,7 @@ local function calculate_side(angles, plytrace)
 	-- i'm offsetting the hull start and end positions by their size in the respective directions so that
 	-- we can more easily react to visibility changes on corners.
 	-- why run hulls? because some grates can cause issues and then our side calculation is wonky as SHIT
-	angles:Right() * vars.distance:GetFloat() * side
+
 	local left_startpos = plytrace.StartPos - angles:Right() * vars.distance:GetFloat()
 	local left_offset = (left_startpos - plytrace.HitPos):Angle():Right() * vars.box_size_2:GetFloat()
 	local tr_to_hitpos_left = run_hull_trace(left_startpos + left_offset, plytrace.HitPos + left_offset)
