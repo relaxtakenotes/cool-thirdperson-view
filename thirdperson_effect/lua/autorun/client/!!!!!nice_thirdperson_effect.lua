@@ -35,6 +35,7 @@ local vars = {
 	thirdperson_offset = CreateConVar("cl_nte_thirdperson_offset", "0 0 0", FCVAR_ARCHIVE),
 	fov_thing_was_reset = CreateConVar("cl_nte_fov_thing_was_reset_lol_epic", 0, FCVAR_ARCHIVE),
 	znear = CreateConVar("cl_nte_znear", 1, FCVAR_ARCHIVE),
+	hack_drc = CreateConVar("cl_nte_hack_drc", "0", FCVAR_ARCHIVE, "When using experimental FP in draconic base, leave out only the model rendering hook.")
 }
 
 concommand.Add("cl_nte_toggle_state", function()
@@ -175,23 +176,6 @@ local function calculate_side(angles, plytrace)
 	end
 end
 
-local wish_speed = 0
-local lerped_speed = 0
-
-local function calculate_ft()
-	local ply = LocalPlayer()
-
-	wish_speed = ply:GetMaxSpeed()
-
-	if not (ply:KeyDown(IN_FORWARD) or ply:KeyDown(IN_MOVELEFT) or ply:KeyDown(IN_MOVERIGHT) or ply:KeyDown(IN_BACK)) then
-		wish_speed = 0
-	end
-
-	lerped_speed = Lerp(engine.AbsoluteFrameTime() * 5, lerped_speed, wish_speed)
-	local speed_factor = math.Remap(lerped_speed, 0, LocalPlayer():GetRunSpeed(), 1, 2) * vars.viewbob_mult_speed_walk:GetFloat()
-	cv_time = cv_time + FrameTime() * speed_factor
-end
-
 local function generate_random_vec(f1, f2, f3, f4, f5, f6, time)
 	return Vector(math.sin(time / f1) / f4, math.cos(time / f2) / f5, math.sin(time / f3) / f6)
 end
@@ -323,14 +307,59 @@ end)
 local last_head_pos = Vector()
 local curr_head_pos = Vector()
 
+local wish_speed = 0
+local lerped_speed = 0
+
 NTE_CALC = false
+
+local samples = {}
+local head_velocity = Vector()
+local weird_magic_number = 1
+local af = 10
+
+hook.Add("Think", "nte_think", function()
+	if not calcview_running then return end
+
+	local lp = LocalPlayer()
+
+	local head1_bone = lp:LookupBone("ValveBiped.Bip01_Head1")
+	lp:ManipulateBoneScale(head1_bone, Vector(1, 1, 1))
+	local head_matrix = lp:GetBoneMatrix(head1_bone)
+	local offset = string.Split(vars.head_offset:GetString(), " ")
+	local c_headpos, _ = LocalToWorld(Vector(offset[1], offset[2], offset[3]), Angle(0, -90, -90), head_matrix:GetTranslation(), head_matrix:GetAngles())
+	last_head_pos = curr_head_pos
+	curr_head_pos = c_headpos
+	if vars.mode:GetInt() == 1 and not vars.render_head:GetBool() then
+		lp:ManipulateBoneScale(head1_bone, Vector())
+	end
+	local player_velocity = lp:GetVelocity()
+	
+	head_velocity = ((curr_head_pos - last_head_pos) - (player_velocity * FrameTime()))
+
+	weird_magic_number = 1
+	if FrameTime() > 0 then
+		weird_magic_number = ((1 / FrameTime())) / af -- used to compensate for player/head velocity, so that the camera is still smooth but is stuck to the player
+	end
+end)
 
 local function main(ply, pos, angles, fov, znear, zfar)
 	if NTE_CALC then return end
+	
+	local lp = LocalPlayer()
 
-	calculate_ft()
+	local ft = FrameTime()
 
-	if GetViewEntity():GetPos():Distance(LocalPlayer():GetPos()) > 5 or LocalPlayer():Health() <= 0 or not vars.enabled:GetBool() then
+	wish_speed = lp:GetMaxSpeed()
+
+	if not (lp:KeyDown(IN_FORWARD) or lp:KeyDown(IN_MOVELEFT) or lp:KeyDown(IN_MOVERIGHT) or lp:KeyDown(IN_BACK)) then
+		wish_speed = 0
+	end
+
+	lerped_speed = Lerp(ft * 5, lerped_speed, wish_speed)
+	local speed_factor = math.Remap(lerped_speed, 0, lp:GetRunSpeed(), 1, 2) * vars.viewbob_mult_speed_walk:GetFloat()
+	cv_time = cv_time + ft * speed_factor
+	
+	if GetViewEntity():GetPos():Distance(lp:GetPos()) > 5 or lp:Health() <= 0 or not vars.enabled:GetBool() then
 		wish_pos = Vector()
 		lerped_pos = Vector()
 		return
@@ -342,37 +371,36 @@ local function main(ply, pos, angles, fov, znear, zfar)
 	NTE_CALC = false
 
 	calcview_running = true
-	timer.Simple(FrameTime()*2, function() calcview_running = false end)
+	timer.Simple(ft*2, function() calcview_running = false end)
 
 	if wish_pos:IsZero() or lerped_pos:IsZero() then
 		wish_pos = pos
 		lerped_pos = pos
 	end
 
-	local af = 10
 	local mult_walk = vars.viewbob_mult_walk:GetFloat()
 	local mult_drunk = vars.viewbob_mult_drunk:GetFloat()
-	local speed = ply:GetMaxSpeed()
+	local speed = lp:GetMaxSpeed()
 
-	if ply:GetVelocity():Length() <= 50 then
+	if lp:GetVelocity():Length() <= 50 then
 		speed = 0
 	end
 
-	wish_viewbob_factor = math.Remap(speed, 0, ply:GetRunSpeed(), 0, 1)
-	lerped_viewbob_factor = Lerp(FrameTime() * af, lerped_viewbob_factor, wish_viewbob_factor)
+	wish_viewbob_factor = math.Remap(speed, 0, lp:GetRunSpeed(), 0, 1)
+	lerped_viewbob_factor = Lerp(ft * af, lerped_viewbob_factor, wish_viewbob_factor)
 	local drunk_view = generate_random_ang(0.9, 0.8, 0.5, 3, 3.6, 3.3, CurTime()) * mult_drunk
 	local drunk_pos = generate_random_vec(1.2, 0.7, 0.8, 3.2, 3, 2, CurTime()) * mult_drunk
 	local walk_viewbob = generate_random_ang(0.22, 0.15, 0.1, 2, 3.6, 3.3, cv_time) * mult_walk * lerped_viewbob_factor / 2
 	local walk_viewbob_pos = generate_random_vec(0.5, 0.4, 0.3, 2, 3.6, 3.3, cv_time) * mult_walk * lerped_viewbob_factor * 5
 
 	local plytrace = util.TraceLine({
-		start = ply:GetShootPos(),
-		endpos = ply:GetShootPos() + ply:EyeAngles():Forward() * vars.eyetrace_distance:GetFloat(),
-		filter = ply,
+		start = lp:GetShootPos(),
+		endpos = lp:GetShootPos() + ply:EyeAngles():Forward() * vars.eyetrace_distance:GetFloat(),
+		filter = lp,
 		mask = MASK_SHOT_PORTAL
 	})
 
-	if not ply:KeyDown(IN_ATTACK) then
+	if not lp:KeyDown(IN_ATTACK) then
 		calculate_side(angles, plytrace)
 	else
 		side_switch_delay = 1
@@ -386,58 +414,39 @@ local function main(ply, pos, angles, fov, znear, zfar)
 		wish_angle_offset = Angle(-2, 0, 0)
 	end
 	
-	lerped_angle_offset = LerpAngle(FrameTime() * af, lerped_angle_offset, wish_angle_offset)
+	lerped_angle_offset = LerpAngle(ft * af, lerped_angle_offset, wish_angle_offset)
 
-	local head1_bone = ply:LookupBone("ValveBiped.Bip01_Head1")
-
-	ply:ManipulateBoneScale(head1_bone, Vector(1, 1, 1))
-	local head_matrix = ply:GetBoneMatrix(head1_bone)
-	local offset = string.Split(vars.head_offset:GetString(), " ")
-	local c_headpos, _ = LocalToWorld(Vector(offset[1], offset[2], offset[3]), Angle(0, -90, -90), head_matrix:GetTranslation(), head_matrix:GetAngles())
-	last_head_pos = curr_head_pos
-	curr_head_pos = c_headpos
-
-	local weird_magic_number = 1
-	if FrameTime() > 0 then
-		weird_magic_number = ((1 / FrameTime()) - af) / af -- used to compensate for player/head velocity, so that the camera is still smooth but is stuck to the player
-	end
-
-	local player_velocity = LocalPlayer():GetVelocity()
-	local head_velocity = ((curr_head_pos - last_head_pos) - (player_velocity * FrameTime())) * weird_magic_number
-
+	local player_velocity = lp:GetVelocity()
+	
 	local tr = {}
 	local head_prediction = Vector()
 	if vars.mode:GetInt() == 0 then
 		local _offset = string.Split(vars.thirdperson_offset:GetString(), " ")
 		local t_offset, _ = LocalToWorld(Vector(_offset[1], _offset[2], _offset[3]) , Angle(0, -90, -90), pos, angles)
 
-		tr = run_hull_trace(pos, t_offset - angles:Forward() * vars.distance:GetFloat() * 3 + player_velocity * FrameTime() * weird_magic_number * 0.6 + walk_viewbob_pos + drunk_pos - side_offset)
+		tr = run_hull_trace(pos, t_offset - angles:Forward() * vars.distance:GetFloat() * 3 + player_velocity * ft * weird_magic_number * 0.6 + walk_viewbob_pos + drunk_pos - side_offset)
 	elseif vars.mode:GetInt() == 1 then
 
 		if vars.predict_head:GetBool() then
 			head_prediction = head_velocity
 		end
 
-		tr = run_hull_trace(pos, c_headpos + player_velocity * FrameTime() * weird_magic_number + walk_viewbob_pos + drunk_pos + head_prediction)
-
-		if not vars.render_head:GetBool() then
-			ply:ManipulateBoneScale(head1_bone, Vector())
-		end
+		tr = run_hull_trace(pos, curr_head_pos + player_velocity * ft * weird_magic_number + walk_viewbob_pos + drunk_pos + head_prediction * weird_magic_number)
 	end
 
 	wish_pos = tr.HitPos
-	if vars.hybrid_firstperson:GetBool() and ply:KeyDown(IN_ATTACK2) and (vars.hybrid_firstperson:GetBool() and vars.mode:GetInt() == 1) then
+	if vars.hybrid_firstperson:GetBool() and lp:KeyDown(IN_ATTACK2) and (vars.hybrid_firstperson:GetBool() and vars.mode:GetInt() == 1) then
 		wish_pos = pos
 	end
 
-	lerped_pos = LerpVector(FrameTime() * af, lerped_pos, wish_pos)
+	lerped_pos = LerpVector(ft * af, lerped_pos, wish_pos)
 
 	wish_fov = math.Remap(tr.Fraction, 0, 1, vars.wish_fov_max:GetFloat(), vars.wish_fov_min:GetFloat())
 	
-	lerped_fov = Lerp(FrameTime() * af, lerped_fov, wish_fov)
+	lerped_fov = Lerp(ft * af, lerped_fov, wish_fov)
 
 	wish_fraction = math.Clamp(tr.Fraction, 0.2, 0.6)
-	lerped_fraction = Lerp(FrameTime() * af, lerped_fraction, wish_fraction)
+	lerped_fraction = Lerp(ft * af, lerped_fraction, wish_fraction)
 
 	local remapped_fraction = math.Remap(lerped_fraction, 0.2, 0.6, 50, 255)
 
@@ -446,10 +455,10 @@ local function main(ply, pos, angles, fov, znear, zfar)
 	end
 
 	-- doesnt work well with custom models. why?
-	LocalPlayer():SetRenderMode(RENDERMODE_TRANSCOLOR)
-	LocalPlayer():SetColor(Color(255, 255, 255, remapped_fraction))
+	lp:SetRenderMode(RENDERMODE_TRANSCOLOR)
+	lp:SetColor(Color(255, 255, 255, remapped_fraction))
 
-	if lerped_pos:Distance(LocalPlayer():EyePos()) > 512 + player_velocity:Length() then
+	if lerped_pos:Distance(lp:EyePos()) > 512 + player_velocity:Length() then
 		lerped_pos = wish_pos
 	end
 
@@ -497,6 +506,8 @@ end
 local function main_vm(wep, vm, oldpos, oldang, pos, ang)
 	if not vars.hybrid_firstperson:GetBool() or not vars.enabled:GetBool() or not calcview_running then return end
 
+	local lp = LocalPlayer()
+
 	pos:Sub(oldpos - lerped_pos)
 
 	local radius = get_viewmodel_radius()
@@ -508,12 +519,12 @@ local function main_vm(wep, vm, oldpos, oldang, pos, ang)
 	local tr = util.TraceLine({
 		start = oldpos,
 		endpos = oldpos + ang:Forward() * 100000,
-		filter = LocalPlayer()
+		filter = lp
 	})
 
 	local frac = math.Remap(tr.Fraction, 0, 1, 1, 0)
 
-	local hitpos = Vector(LocalPlayer():GetEyeTrace().HitPos:Unpack()) + ang:Forward() * frac * radius * 0.7
+	local hitpos = Vector(lp:GetEyeTrace().HitPos:Unpack()) + ang:Forward() * frac * radius * 0.7
 
 	wish_dir = (hitpos - pos):GetNormalized()
 	
@@ -570,6 +581,10 @@ cvars.AddChangeCallback(vars.enabled:GetName(), invalidate_vm_data)
 
 hook.Add("InitPostEntity", "nte_load", function()
 	timer.Simple(1, function()
+		if vars.hack_drc:GetBool() then
+			hook.Remove("CalcView", "DRC_EFP_CalcView")
+			hook.Remove("CalcViewModelView", "DRC_EFP_CalcViewModelView")
+		end
 		if not vars.fov_thing_was_reset:GetBool() then
 			vars.wish_fov_max:Revert()
 			vars.wish_fov_min:Revert()
@@ -627,6 +642,9 @@ local function preferences(Panel)
 	Panel:ControlHelp("Too much to explain. Leave it at default or play around with it until you're satisfied.")
 	Panel:NumSlider("AutoSide Reaction time DIV", vars.reaction_time_div:GetName(), 0, 100, 1)
 	Panel:ControlHelp("Part of a magic formula that determines how fast autoside should react. Higher - faster, lower - slower.")
+	Panel:ControlHelp("\n\n")
+	Panel:CheckBox("Hack draconic base!! 0_0", vars.hack_drc:GetName())
+	Panel:ControlHelp("Lets you render the model while having hybrid immersive firstperson enabled. You must have draconic base installed and cl_drc_experimental_fp enabled!")
 	Panel:ControlHelp("\n\n")
 	Panel:Button("Reset settings", "cl_nte_reset")
 end
