@@ -27,7 +27,6 @@ local vars = {
 	},
 	render_head = CreateConVar("cl_nte_render_head", 0, FCVAR_ARCHIVE),
 	head_offset = CreateConVar("cl_nte_head_offset", "8 -8 0", FCVAR_ARCHIVE),
-	predict_head = CreateConVar("cl_nte_predict_head", 0, FCVAR_ARCHIVE),
 	autoside_enabled = CreateConVar("cl_nte_autoside_enabled", 1, FCVAR_ARCHIVE),
 	default_side = CreateConVar("cl_nte_default_side", -1, FCVAR_ARCHIVE),
 	box_size_2 = CreateConVar("cl_nte_vischeck_size", "5", FCVAR_ARCHIVE),
@@ -51,6 +50,9 @@ concommand.Add("cl_nte_switch_mode", function()
 	vars.mode:SetInt(mode)
 end)
 
+local TP = 0
+local FP = 1
+
 local _mins = Vector(-vars.box_size_2:GetFloat(), -vars.box_size_2:GetFloat(), -vars.box_size_2:GetFloat())
 local _maxs = Vector(vars.box_size_2:GetFloat(), vars.box_size_2:GetFloat(), vars.box_size_2:GetFloat())
 local wish_fov = 0
@@ -61,6 +63,7 @@ local wish_fraction = 1
 local lerped_fraction = 1
 local wish_angle_offset = Angle()
 local lerped_angle_offset = Angle()
+local pos_final = Vector() // im planning so do smth with it...
 local calcview_running = false
 
 local cv_time = 0
@@ -112,16 +115,19 @@ local function calculate_side(angles, plytrace)
 	-- we can more easily react to visibility changes on corners.
 	-- why run hulls? because some grates can cause issues and then our side calculation is wonky as SHIT
 
-	local left_startpos = plytrace.StartPos - angles:Right() * vars.distance:GetFloat()
-	local left_offset = (left_startpos - plytrace.HitPos):Angle():Right() * vars.box_size_2:GetFloat()
+	local dist = vars.distance:GetFloat()
+	local box_size = vars.box_size_2:GetFloat()
+
+	local left_startpos = plytrace.StartPos - angles:Right() * dist - angles:Forward() * dist * 3
+	local left_offset = (left_startpos - plytrace.HitPos):Angle():Right() * box_size
 	local tr_to_hitpos_left = run_hull_trace(left_startpos + left_offset, plytrace.HitPos + left_offset)
 
-	local right_startpos = plytrace.StartPos + angles:Right() * vars.distance:GetFloat()
-	local right_offset = (right_startpos - plytrace.HitPos):Angle():Right() * vars.box_size_2:GetFloat()
+	local right_startpos = plytrace.StartPos + angles:Right() * dist - angles:Forward() * dist * 3
+	local right_offset = (right_startpos - plytrace.HitPos):Angle():Right() * box_size
 	local tr_to_hitpos_right = run_hull_trace(right_startpos - right_offset, plytrace.HitPos - right_offset)
 
-	local up_startpos = plytrace.StartPos + angles:Up() * vars.distance:GetFloat()
-	local up_offset = (up_startpos - plytrace.HitPos):Angle():Up() * vars.box_size_2:GetFloat()
+	local up_startpos = plytrace.StartPos + angles:Up() * dist - angles:Forward() * dist * 3
+	local up_offset = (up_startpos - plytrace.HitPos):Angle():Up() * box_size
 	local tr_to_hitpos_above = run_hull_trace(up_startpos + up_offset, plytrace.HitPos + up_offset)
 
 	left = tr_to_hitpos_left.Fraction
@@ -233,18 +239,17 @@ hook.Add("RenderScreenspaceEffects", "nte_crosshair", function()
 	end
 
 	local visibilitytr = util.TraceLine({
-		start = lerped_pos,
+		start = pos_final,
 		endpos = tr.HitPos,
 		filter = lp
 	})
 
-	local color = nil
-
+	local convar = vars.crosshair_color
 	if visibilitytr.Fraction <= 0.99 then
-		color = Color(vars.crosshair_color_hidden.r:GetFloat(), vars.crosshair_color_hidden.g:GetFloat(), vars.crosshair_color_hidden.b:GetFloat(), vars.crosshair_color_hidden.a:GetFloat())
-	else
-		color = Color(vars.crosshair_color.r:GetFloat(), vars.crosshair_color.g:GetFloat(), vars.crosshair_color.b:GetFloat(), vars.crosshair_color.a:GetFloat())
+		convar = vars.crosshair_color_hidden
 	end
+
+	local color = Color(convar.r:GetFloat(), convar.g:GetFloat(), convar.b:GetFloat(), convar.a:GetFloat())
 
 	local tos = tr.HitPos:ToScreen()
 
@@ -262,7 +267,7 @@ local wish_limit_lower = 65
 local lerped_limit_upper = -80
 local lerped_limit_lower = 65
 
-hook.Add("CreateMove", "nte_get_away_from_the_wall", function(cmd)
+hook.Add("CreateMove", "nte_limits", function(cmd)
 	local lp = LocalPlayer()
 	local headpos, headang = lp:GetBonePosition(lp:LookupBone("ValveBiped.Bip01_Head1"))
 	
@@ -272,9 +277,9 @@ hook.Add("CreateMove", "nte_get_away_from_the_wall", function(cmd)
 
 	local data = {
 		start = headpos - ang:Forward() * 10,
-		endpos = headpos,
-		maxs = Vector(3,3,3),
-		mins = Vector(-3,-3,-3),
+		endpos = headpos + ang:Forward(),
+		maxs = Vector(5,5,5),
+		mins = Vector(-5,-5,-5),
 		filter = lp
 	}
 
@@ -282,7 +287,6 @@ hook.Add("CreateMove", "nte_get_away_from_the_wall", function(cmd)
 	
 	if (tr.Hit or tr.StartSolid) and lp:GetMoveType() == MOVETYPE_WALK then
 		local diff = (tr.StartPos - tr.HitPos):GetNormalized()
-		diff.z = 0
 		cmd:SetForwardMove(diff.x * 10000)
 		cmd:SetSideMove(diff.y * 10000)
 	end
@@ -304,60 +308,44 @@ hook.Add("CreateMove", "nte_get_away_from_the_wall", function(cmd)
 	end
 end)
 
-local last_head_pos = Vector()
-local curr_head_pos = Vector()
-
-local wish_speed = 0
-local lerped_speed = 0
 
 NTE_CALC = false
 
-local samples = {}
+local head_pos = Vector()
+local prev_head_pos = Vector()
+
 local head_velocity = Vector()
-local weird_magic_number = 1
-local af = 10
 
 hook.Add("Think", "nte_think", function()
 	if not calcview_running then return end
-
+	
 	local lp = LocalPlayer()
-
+	
 	local head1_bone = lp:LookupBone("ValveBiped.Bip01_Head1")
 	lp:ManipulateBoneScale(head1_bone, Vector(1, 1, 1))
-	local head_matrix = lp:GetBoneMatrix(head1_bone)
-	local offset = string.Split(vars.head_offset:GetString(), " ")
-	local c_headpos, _ = LocalToWorld(Vector(offset[1], offset[2], offset[3]), Angle(0, -90, -90), head_matrix:GetTranslation(), head_matrix:GetAngles())
-	last_head_pos = curr_head_pos
-	curr_head_pos = c_headpos
-	if vars.mode:GetInt() == 1 and not vars.render_head:GetBool() then
-		lp:ManipulateBoneScale(head1_bone, Vector())
-	end
-	local player_velocity = lp:GetVelocity()
-	
-	head_velocity = ((curr_head_pos - last_head_pos) - (player_velocity * FrameTime()))
 
-	weird_magic_number = 1
-	if FrameTime() > 0 then
-		weird_magic_number = ((1 / FrameTime())) / af -- used to compensate for player/head velocity, so that the camera is still smooth but is stuck to the player
+	local pos, ang = lp:GetBonePosition(head1_bone)
+
+	local matrix = lp:GetBoneMatrix(head1_bone)
+
+	if matrix then
+		pos = matrix:GetTranslation()
+		ang = matrix:GetAngles()
 	end
+
+	local offset = string.Split(vars.head_offset:GetString(), " ")
+	prev_head_pos = head_pos
+	head_pos, _ = LocalToWorld(Vector(offset[1], offset[2], offset[3]), Angle(0, -90, -90), pos, ang)
+	head_velocity = (head_pos - prev_head_pos) / engine.AbsoluteFrameTime()
 end)
+
+local af = 10
 
 local function main(ply, pos, angles, fov, znear, zfar)
 	if NTE_CALC then return end
 	
 	local lp = LocalPlayer()
-
 	local ft = FrameTime()
-
-	wish_speed = lp:GetMaxSpeed()
-
-	if not (lp:KeyDown(IN_FORWARD) or lp:KeyDown(IN_MOVELEFT) or lp:KeyDown(IN_MOVERIGHT) or lp:KeyDown(IN_BACK)) then
-		wish_speed = 0
-	end
-
-	lerped_speed = Lerp(ft * 5, lerped_speed, wish_speed)
-	local speed_factor = math.Remap(lerped_speed, 0, lp:GetRunSpeed(), 1, 2) * vars.viewbob_mult_speed_walk:GetFloat()
-	cv_time = cv_time + ft * speed_factor
 	
 	if GetViewEntity():GetPos():Distance(lp:GetPos()) > 5 or lp:Health() <= 0 or not vars.enabled:GetBool() then
 		wish_pos = Vector()
@@ -390,6 +378,9 @@ local function main(ply, pos, angles, fov, znear, zfar)
 	lerped_viewbob_factor = Lerp(ft * af, lerped_viewbob_factor, wish_viewbob_factor)
 	local drunk_view = generate_random_ang(0.9, 0.8, 0.5, 3, 3.6, 3.3, CurTime()) * mult_drunk
 	local drunk_pos = generate_random_vec(1.2, 0.7, 0.8, 3.2, 3, 2, CurTime()) * mult_drunk
+
+	cv_time = cv_time + ft * math.Remap(lerped_viewbob_factor, 0, 1, 0, 2)
+
 	local walk_viewbob = generate_random_ang(0.22, 0.15, 0.1, 2, 3.6, 3.3, cv_time) * mult_walk * lerped_viewbob_factor / 2
 	local walk_viewbob_pos = generate_random_vec(0.5, 0.4, 0.3, 2, 3.6, 3.3, cv_time) * mult_walk * lerped_viewbob_factor * 5
 
@@ -416,33 +407,50 @@ local function main(ply, pos, angles, fov, znear, zfar)
 	
 	lerped_angle_offset = LerpAngle(ft * af, lerped_angle_offset, wish_angle_offset)
 
-	local player_velocity = lp:GetVelocity()
-	
 	local tr = {}
-	local head_prediction = Vector()
-	if vars.mode:GetInt() == 0 then
+
+	local f = 1
+	if ft > 0 then
+		f = (1/ft) / af
+	end
+	
+	local velocity = lp:GetVelocity()
+
+	if vars.mode:GetInt() == TP then
 		local _offset = string.Split(vars.thirdperson_offset:GetString(), " ")
 		local t_offset, _ = LocalToWorld(Vector(_offset[1], _offset[2], _offset[3]) , Angle(0, -90, -90), pos, angles)
 
-		tr = run_hull_trace(pos, t_offset - angles:Forward() * vars.distance:GetFloat() * 3 + player_velocity * ft * weird_magic_number * 0.6 + walk_viewbob_pos + drunk_pos - side_offset)
-	elseif vars.mode:GetInt() == 1 then
+		walk_viewbob = walk_viewbob * 1.5
+		tr = run_hull_trace(pos, t_offset - angles:Forward() * vars.distance:GetFloat() * 3 + walk_viewbob_pos * 2 + drunk_pos - side_offset + velocity * ft * f)
 
-		if vars.predict_head:GetBool() then
-			head_prediction = head_velocity
+		wish_pos = tr.HitPos
+		lerped_pos = LerpVector(ft * af, lerped_pos, wish_pos)
+
+		pos_final = lerped_pos
+	elseif vars.mode:GetInt() == FP then
+		local prediction = Vector()
+		
+	 	// not having the body rendered and trying to do something with the head bone makes it jittery and ugly.
+		if vars.hybrid_firstperson:GetBool() then 
+			prediction = velocity * ft * f / 2
+		else
+			prediction = head_velocity * ft * f
 		end
 
-		tr = run_hull_trace(pos, curr_head_pos + player_velocity * ft * weird_magic_number + walk_viewbob_pos + drunk_pos + head_prediction * weird_magic_number)
-	end
+		tr = run_hull_trace(pos, head_pos + walk_viewbob_pos + drunk_pos + prediction)
 
-	wish_pos = tr.HitPos
-	if vars.hybrid_firstperson:GetBool() and lp:KeyDown(IN_ATTACK2) and (vars.hybrid_firstperson:GetBool() and vars.mode:GetInt() == 1) then
-		wish_pos = pos
-	end
+		wish_pos = tr.HitPos
+		
+		if vars.hybrid_firstperson:GetBool() and lp:KeyDown(IN_ATTACK2) and (vars.hybrid_firstperson:GetBool() and vars.mode:GetInt() == 1) then
+			wish_pos = pos
+		end
 
-	lerped_pos = LerpVector(ft * af, lerped_pos, wish_pos)
+		lerped_pos = LerpVector(ft * af, lerped_pos, wish_pos)
+
+		pos_final = lerped_pos
+	end
 
 	wish_fov = math.Remap(tr.Fraction, 0, 1, vars.wish_fov_max:GetFloat(), vars.wish_fov_min:GetFloat())
-	
 	lerped_fov = Lerp(ft * af, lerped_fov, wish_fov)
 
 	wish_fraction = math.Clamp(tr.Fraction, 0.2, 0.6)
@@ -458,15 +466,11 @@ local function main(ply, pos, angles, fov, znear, zfar)
 	lp:SetRenderMode(RENDERMODE_TRANSCOLOR)
 	lp:SetColor(Color(255, 255, 255, remapped_fraction))
 
-	if lerped_pos:Distance(lp:EyePos()) > 512 + player_velocity:Length() then
-		lerped_pos = wish_pos
-	end
-
 	local view = {
-		origin = lerped_pos,
+		origin = pos_final,
 		angles = angles + walk_viewbob + drunk_view,
 		fov = math.Clamp(fov + lerped_fov, 0.01, 179),
-		drawviewer = not (vars.hybrid_firstperson:GetBool() and vars.mode:GetInt() == 1),
+		drawviewer = not (vars.hybrid_firstperson:GetBool() and vars.mode:GetInt() == FP),
 		znear = vars.znear:GetFloat(),
 		zfar = zfar
 	}
@@ -508,7 +512,7 @@ local function main_vm(wep, vm, oldpos, oldang, pos, ang)
 
 	local lp = LocalPlayer()
 
-	pos:Sub(oldpos - lerped_pos)
+	pos:Sub(oldpos - pos_final)
 
 	local radius = get_viewmodel_radius()
 
@@ -563,7 +567,6 @@ hook.Add("PostPlayerDraw", "nte_send_vm_data", function(ply)
 	local bone_matrix = lp:GetBoneMatrix(lp:LookupBone("ValveBiped.Bip01_R_Hand"))
 
 	lp.hand_pos = bone_matrix:GetTranslation() or Vector()
-
 	lp.vm_radius = get_viewmodel_radius()
 
 	net.Start("nte_bone_positions")
@@ -621,8 +624,6 @@ local function preferences(Panel)
 	Panel:ControlHelp("")
 	Panel:CheckBox("Render Head", vars.render_head:GetName())
 	Panel:ControlHelp("Renders your head when you're in firstperson mode. (mode: 1)")
-	Panel:CheckBox("Predict Head Movement", vars.predict_head:GetName())
-	Panel:ControlHelp("This accounts for your head movement when you're in firstperson, recommended for use with render head on, otherwise keep this off. (mode: 1)")
 	Panel:ControlHelp("")
 	Panel:NumSlider("Max wish fov", vars.wish_fov_max:GetName(), 0, 65)
 	Panel:NumSlider("Min wish fov", vars.wish_fov_min:GetName(), 0, 65)
