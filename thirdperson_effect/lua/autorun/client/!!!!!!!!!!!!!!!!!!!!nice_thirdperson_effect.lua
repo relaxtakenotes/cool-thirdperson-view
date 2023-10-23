@@ -424,9 +424,6 @@ local function main(ply, pos, angles, fov, znear, zfar)
 		tr = run_hull_trace(pos, t_offset - angles:Forward() * vars.distance:GetFloat() * 3 + walk_viewbob_pos * 2 + drunk_pos - side_offset + velocity * ft * f)
 
 		wish_pos = tr.HitPos
-		lerped_pos = LerpVector(ft * af, lerped_pos, wish_pos)
-
-		pos_final = lerped_pos
 	elseif vars.mode:GetInt() == FP then
 		local prediction = Vector()
 		
@@ -444,12 +441,11 @@ local function main(ply, pos, angles, fov, znear, zfar)
 		if vars.hybrid_firstperson:GetBool() and lp:KeyDown(IN_ATTACK2) and (vars.hybrid_firstperson:GetBool() and vars.mode:GetInt() == 1) then
 			wish_pos = pos
 		end
-
-		lerped_pos = LerpVector(ft * af, lerped_pos, wish_pos)
-
-		pos_final = lerped_pos
 	end
 
+	lerped_pos = LerpVector(ft * af, lerped_pos, wish_pos)
+	pos_final = lerped_pos
+	
 	wish_fov = math.Remap(tr.Fraction, 0, 1, vars.wish_fov_max:GetFloat(), vars.wish_fov_min:GetFloat())
 	lerped_fov = Lerp(ft * af, lerped_fov, wish_fov)
 
