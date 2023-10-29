@@ -269,27 +269,6 @@ local lerped_limit_lower = 65
 
 hook.Add("CreateMove", "nte_limits", function(cmd)
 	local lp = LocalPlayer()
-	local headpos, headang = lp:GetBonePosition(lp:LookupBone("ValveBiped.Bip01_Head1"))
-	
-	local ang = lp:EyeAngles()
-	ang.x = 0
-	ang.z = 0
-
-	local data = {
-		start = headpos - ang:Forward() * 10,
-		endpos = headpos + ang:Forward(),
-		maxs = Vector(5,5,5),
-		mins = Vector(-5,-5,-5),
-		filter = lp
-	}
-
-	local tr = util.TraceHull(data)
-	
-	if (tr.Hit or tr.StartSolid) and lp:GetMoveType() == MOVETYPE_WALK then
-		local diff = (tr.StartPos - tr.HitPos):GetNormalized()
-		cmd:SetForwardMove(diff.x * 10000)
-		cmd:SetSideMove(diff.y * 10000)
-	end
 
 	if vars.hybrid_firstperson:GetBool() and vars.mode:GetInt() == 1 then
 		local ang = cmd:GetViewAngles()
@@ -307,7 +286,6 @@ hook.Add("CreateMove", "nte_limits", function(cmd)
 		cmd:SetViewAngles(ang)
 	end
 end)
-
 
 NTE_CALC = false
 
