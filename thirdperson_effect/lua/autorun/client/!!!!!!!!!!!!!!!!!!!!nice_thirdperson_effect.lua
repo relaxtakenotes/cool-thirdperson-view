@@ -319,6 +319,9 @@ end)
 
 local af = 10
 
+local lastpos = Vector()
+local currpos = Vector()
+
 local function main(ply, pos, angles, fov, znear, zfar)
 	if NTE_CALC then return end
 	
@@ -330,6 +333,15 @@ local function main(ply, pos, angles, fov, znear, zfar)
 		lerped_pos = Vector()
 		return
 	end
+
+    lastpos = currpos
+    currpos = lp:GetPos()
+
+    if lastpos:Distance(currpos) > 64 then
+        wish_pos = Vector()
+		lerped_pos = Vector()
+		return
+    end
 
 	NTE_CALC = true
 	local base_view = hook.Run("CalcView", ply, pos, angles, fov, znear, zfar)
@@ -540,7 +552,12 @@ hook.Add("PostPlayerDraw", "nte_send_vm_data", function(ply)
 
 	local bone_matrix = lp:GetBoneMatrix(lp:LookupBone("ValveBiped.Bip01_R_Hand"))
 
-	lp.hand_pos = bone_matrix:GetTranslation() or Vector()
+    if bone_matrix then
+	    lp.hand_pos = bone_matrix:GetTranslation() or Vector()
+    else
+        lp.hand_pos = ply:GetBonePosition(lp:LookupBone("ValveBiped.Bip01_R_Hand"))
+    end
+
 	lp.vm_radius = get_viewmodel_radius()
 
 	net.Start("nte_bone_positions")
