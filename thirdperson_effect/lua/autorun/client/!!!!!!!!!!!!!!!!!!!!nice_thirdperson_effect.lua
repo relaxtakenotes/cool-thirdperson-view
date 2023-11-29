@@ -290,6 +290,7 @@ end)
 NTE_CALC = false
 
 local head_pos = Vector()
+local rel_head_pos = Vector()
 local prev_head_pos = Vector()
 
 local head_velocity = Vector()
@@ -300,6 +301,7 @@ hook.Add("Think", "nte_think", function()
 	local lp = LocalPlayer()
 	
 	local head1_bone = lp:LookupBone("ValveBiped.Bip01_Head1")
+
 	lp:ManipulateBoneScale(head1_bone, Vector(1, 1, 1))
 
 	local pos, ang = lp:GetBonePosition(head1_bone)
@@ -315,6 +317,12 @@ hook.Add("Think", "nte_think", function()
 	prev_head_pos = head_pos
 	head_pos, _ = LocalToWorld(Vector(offset[1], offset[2], offset[3]), Angle(0, -90, -90), pos, ang)
 	head_velocity = (head_pos - prev_head_pos) / engine.AbsoluteFrameTime()
+
+    rel_head_pos = LocalPlayer():EyePos() - head_pos 
+
+    if not vars.render_head:GetBool() then
+	    lp:ManipulateBoneScale(head1_bone, vector_origin)
+    end
 end)
 
 local af = 10
@@ -329,8 +337,8 @@ local function main(ply, pos, angles, fov, znear, zfar)
 	local ft = FrameTime()
 	
 	if GetViewEntity():GetPos():Distance(lp:GetPos()) > 5 or lp:Health() <= 0 or not vars.enabled:GetBool() then
-		wish_pos = Vector()
-		lerped_pos = Vector()
+		wish_pos = vector_origin
+		lerped_pos = vector_origin
 		return
 	end
 
@@ -338,8 +346,8 @@ local function main(ply, pos, angles, fov, znear, zfar)
     currpos = lp:GetPos()
 
     if lastpos:Distance(currpos) > 64 then
-        wish_pos = Vector()
-		lerped_pos = Vector()
+        wish_pos = vector_origin
+		lerped_pos = vector_origin
 		return
     end
 
@@ -399,10 +407,10 @@ local function main(ply, pos, angles, fov, znear, zfar)
 
 	local tr = {}
 
-	local f = 1
-	if ft > 0 then
-		f = (1/ft) / af
-	end
+	//local f = 1
+	//if ft > 0 then
+	//	f = (1/ft) / af
+	//end
 	
 	local velocity = lp:GetVelocity()
 
@@ -411,30 +419,32 @@ local function main(ply, pos, angles, fov, znear, zfar)
 		local t_offset, _ = LocalToWorld(Vector(_offset[1], _offset[2], _offset[3]) , Angle(0, -90, -90), pos, angles)
 
 		walk_viewbob = walk_viewbob * 1.5
-		tr = run_hull_trace(pos, t_offset - angles:Forward() * vars.distance:GetFloat() * 3 + walk_viewbob_pos * 2 + drunk_pos - side_offset + velocity * ft * f)
+		tr = run_hull_trace(pos, t_offset - angles:Forward() * vars.distance:GetFloat() * 3 + walk_viewbob_pos * 2 + drunk_pos - side_offset)
 
-		wish_pos = tr.HitPos
+		wish_pos = tr.HitPos - pos
 	elseif vars.mode:GetInt() == FP then
-		local prediction = Vector()
-		
-	 	// not having the body rendered and trying to do something with the head bone makes it jittery and ugly.
-		if vars.hybrid_firstperson:GetBool() then 
-			prediction = velocity * ft * f / 2
-		else
-			prediction = head_velocity * ft * f
-		end
+		tr = run_hull_trace(pos, head_pos + walk_viewbob_pos + drunk_pos)
 
-		tr = run_hull_trace(pos, head_pos + walk_viewbob_pos + drunk_pos + prediction)
-
-		wish_pos = tr.HitPos
-		
-		if vars.hybrid_firstperson:GetBool() and lp:KeyDown(IN_ATTACK2) and (vars.hybrid_firstperson:GetBool() and vars.mode:GetInt() == 1) then
-			wish_pos = pos
-		end
+		wish_pos = tr.HitPos - head_pos
 	end
 
+    // Lerpvector doesn't like when it's TO argument is just all zeroes for some reason? wtf
+    local whatthefuck = vector_origin
+    
+    if vars.mode:GetInt() == FP then
+        whatthefuck = rel_head_pos
+        if vars.hybrid_firstperson:GetBool() and lp:KeyDown(IN_ATTACK2) and (vars.hybrid_firstperson:GetBool() and vars.mode:GetInt() == 1) then
+            whatthefuck = vector_origin
+            wish_pos = vector_origin
+        end
+    end
+
+    if wish_pos:IsZero() then
+        wish_pos = vector_up * 0.1
+    end
+
 	lerped_pos = LerpVector(ft * af, lerped_pos, wish_pos)
-	pos_final = lerped_pos
+    pos_final = pos + lerped_pos - whatthefuck
 	
 	wish_fov = math.Remap(tr.Fraction, 0, 1, vars.wish_fov_max:GetFloat(), vars.wish_fov_min:GetFloat())
 	lerped_fov = Lerp(ft * af, lerped_fov, wish_fov)
@@ -452,8 +462,9 @@ local function main(ply, pos, angles, fov, znear, zfar)
 	lp:SetRenderMode(RENDERMODE_TRANSCOLOR)
 	lp:SetColor(Color(255, 255, 255, remapped_fraction))
 
+
 	local view = {
-		origin = pos_final,
+		origin = pos + lerped_pos - whatthefuck,
 		angles = angles + walk_viewbob + drunk_view,
 		fov = math.Clamp(fov + lerped_fov, 0.01, 179),
 		drawviewer = not (vars.hybrid_firstperson:GetBool() and vars.mode:GetInt() == FP),
